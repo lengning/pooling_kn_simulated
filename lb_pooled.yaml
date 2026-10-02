@@ -1,0 +1,486 @@
+schema_version: "1.0"
+domain: LB
+keys: [STUDYID, USUBJID, LBSEQ]
+# The same two ODM inputs as dm_pooled.yaml, written by convert_odm.R or
+# convert_odm.py. Each study keeps its own file; the spec pools them. Every
+# recoding below is logged, with its evidence and status, in decisions_lb.md.
+input:
+  ODM189: input/kn189_odm.parquet
+  ODM564: input/kn564_odm.parquet
+
+output:
+  path: lb_pooled.csv
+  columns: [STUDYID, DOMAIN, USUBJID, LBSEQ, LBTESTCD, LBTEST, LBCAT, LBSPEC,
+    LBORRES, LBORRESU, LBSTRESC, LBSTRESN, LBSTRESU, LBTOXGR, VISIT, LBDTC,
+    LBDY]
+  order_by: [STUDYID, USUBJID, LBSEQ]
+
+columns:
+  # ---- Study-specific bindings: every row template supplies these. ----
+  - name: STUDYID
+    type: str
+    label: Study Identifier
+
+  # The ODM SubjectKey, as in dm_pooled.yaml, so LB links to DM.
+  - name: USUBJID
+    type: str
+    label: Unique Subject Identifier
+
+  # The form and the result item, without the study's NCT prefix:
+  # IG.NCT02578680.LB_CHEM -> LB_CHEM, IT.NCT02578680.LB_CHEM.ALB -> LB_CHEM.ALB.
+  - name: FORM
+    type: str
+    label: Lab Form
+
+  - name: ITEM
+    type: str
+    label: Lab Result Item
+
+  # The visit as named by each study (SCREENING in KN189, SCRN in KN564).
+  - name: VISIT
+    type: str
+    label: Visit Name
+
+  # As collected. A blank result stops the run.
+  - name: LBORRES
+    type: str
+    label: Result or Finding in Original Units
+    verifications:
+      not_missing: {}
+
+  # The date item of the result's own form occurrence (REQ-1269). KN189's
+  # screening coagulation sample is dated 3 days before the other screening
+  # labs, so a visit-level date would be wrong for it.
+  - name: LBDTC
+    type: date
+    label: Date/Time of Specimen Collection
+    verifications:
+      not_missing: {}
+
+  # Collected on some forms only; missing on the others.
+  - name: LBDY
+    type: int
+    label: Study Day of Specimen Collection
+
+  # Collected by KN189 for ANC, HGB and PLT only.
+  - name: LBTOXGR
+    type: str
+    label: Standard Toxicity Grade
+    verifications:
+      allowed_values:
+        values: ['0', '1', '2', '3', '4', '5']
+
+  # ---- Pooled harmonization: one rule for both studies. ----
+  # No `unmapped` handler: an item or form neither study has shown so far
+  # stops the run instead of being silently recoded or dropped.
+  - name: DOMAIN
+    type: str
+    label: Domain Abbreviation
+    derivation: {literal: LB}
+
+  # Item names differ by study (GLUCOSE/GLUC, POTASSIUM/POTAS, PT_INR/INR,
+  # UPRO/UAPROT, ...). FT3 (KN189, free) and T3 (KN564, total) are
+  # different tests and keep different codes.
+  - name: LBTESTCD
+    type: str
+    label: Lab Test or Examination Short Name
+    derivation:
+      mapping:
+        source: ITEM
+        dict:
+          LB_CHEM.ALB: ALB
+          LB_CHEM.ALT: ALT
+          LB_CHEM.AST: AST
+          LB_CHEM.CALC: CA
+          LB_CHEM.CRCL: CREATCLR
+          LB_CHEM.CREAT: CREAT
+          LB_CHEM.GLUC: GLUC
+          LB_CHEM.GLUCOSE: GLUC
+          LB_CHEM.POTAS: K
+          LB_CHEM.POTASSIUM: K
+          LB_CHEM.SODIUM: SODIUM
+          LB_CHEM.TBIL: BILI
+          LB_COAG.APTT: APTT
+          LB_COAG.INR: INR
+          LB_COAG.PT_INR: INR
+          LB_HEM.ANC: NEUT
+          LB_HEM.HGB: HGB
+          LB_HEM.LYMPH: LYMPH
+          LB_HEM.PLT: PLAT
+          LB_HEM.WBC: WBC
+          LB_THY.FT3: T3FR
+          LB_THY.FT4: T4FR
+          LB_THY.T3: T3
+          LB_THY.TSH: TSH
+          LB_UA.UABLOOD: OCCBLD
+          LB_UA.UBLOOD: OCCBLD
+          LB_UA.UAGLUC: GLUC
+          LB_UA.UGLU: GLUC
+          LB_UA.UAPROT: PROT
+          LB_UA.UPRO: PROT
+
+  - name: LBTEST
+    type: str
+    label: Lab Test or Examination Name
+    derivation:
+      mapping:
+        source: LBTESTCD
+        dict:
+          ALB: Albumin
+          ALT: Alanine Aminotransferase
+          APTT: Activated Partial Thromboplastin Time
+          AST: Aspartate Aminotransferase
+          BILI: Bilirubin
+          CA: Calcium
+          CREAT: Creatinine
+          CREATCLR: Creatinine Clearance
+          GLUC: Glucose
+          HGB: Hemoglobin
+          INR: Prothrombin Intl. Normalized Ratio
+          K: Potassium
+          LYMPH: Lymphocytes
+          NEUT: Neutrophils
+          OCCBLD: Occult Blood
+          PLAT: Platelets
+          PROT: Protein
+          SODIUM: Sodium
+          T3: Triiodothyronine
+          T3FR: Triiodothyronine, Free
+          T4FR: Thyroxine, Free
+          TSH: Thyrotropin
+          WBC: Leukocytes
+
+  - name: LBCAT
+    type: str
+    label: Category for Lab Test
+    derivation:
+      mapping:
+        source: FORM
+        dict:
+          LB_CHEM: CHEMISTRY
+          LB_COAG: COAGULATION
+          LB_HEM: HEMATOLOGY
+          LB_THY: THYROID
+          LB_UA: URINALYSIS
+
+  # Not collected; inferred from the form. Serum versus plasma for
+  # chemistry cannot be confirmed from the data.
+  - name: LBSPEC
+    type: str
+    label: Specimen Type
+    derivation:
+      mapping:
+        source: FORM
+        dict:
+          LB_CHEM: SERUM
+          LB_COAG: PLASMA
+          LB_HEM: BLOOD
+          LB_THY: SERUM
+          LB_UA: URINE
+
+  # Neither ODM declares units. They are inferred from the value ranges,
+  # which agree between the studies test by test (conventional US units);
+  # KN564's item descriptions confirm HGB, WBC, PLT, CREAT and CALC.
+  # INR is a ratio and the urinalysis results are ordinal: no unit.
+  - name: LBORRESU
+    type: str
+    label: Original Units
+    derivation:
+      mapping:
+        source: ITEM
+        dict:
+          LB_CHEM.ALB: g/dL
+          LB_CHEM.ALT: U/L
+          LB_CHEM.AST: U/L
+          LB_CHEM.CALC: mg/dL
+          LB_CHEM.CRCL: mL/min
+          LB_CHEM.CREAT: mg/dL
+          LB_CHEM.GLUC: mg/dL
+          LB_CHEM.GLUCOSE: mg/dL
+          LB_CHEM.POTAS: mmol/L
+          LB_CHEM.POTASSIUM: mmol/L
+          LB_CHEM.SODIUM: mmol/L
+          LB_CHEM.TBIL: mg/dL
+          LB_COAG.APTT: sec
+          LB_COAG.INR: null
+          LB_COAG.PT_INR: null
+          LB_HEM.ANC: 10^9/L
+          LB_HEM.HGB: g/dL
+          LB_HEM.LYMPH: 10^9/L
+          LB_HEM.PLT: 10^9/L
+          LB_HEM.WBC: 10^9/L
+          LB_THY.FT3: pg/mL
+          LB_THY.FT4: ng/dL
+          LB_THY.T3: ng/dL
+          LB_THY.TSH: mIU/L
+          LB_UA.UABLOOD: null
+          LB_UA.UBLOOD: null
+          LB_UA.UAGLUC: null
+          LB_UA.UGLU: null
+          LB_UA.UAPROT: null
+          LB_UA.UPRO: null
+
+  # Both studies already use the same units, so no result is converted.
+  - name: LBSTRESC
+    type: str
+    label: Character Result/Finding in Std Format
+    derivation: LBORRES
+
+  - name: LBSTRESU
+    type: str
+    label: Standard Units
+    derivation: LBORRESU
+
+  # The urinalysis results (NEGATIVE, TRACE, 1+) are not numbers and stay
+  # missing here; the `implies` check below requires every other result
+  # to convert.
+  - name: LBSTRESN
+    type: float
+    label: Numeric Result/Finding in Standard Units
+    derivation:
+      value:
+        source: LBORRES
+      unconvertible: null
+
+  # Results numbered from 1 within each subject by collection date, then
+  # category, then test.
+  - name: LBSEQ
+    type: int
+    label: Sequence Number
+    derivation:
+      row_number:
+        window:
+          group_by: [STUDYID, USUBJID]
+          order_by: [LBDTC, LBCAT, LBTESTCD]
+
+# One row per result item, so each row template is record-driven over its
+# study's ODM, one template per form. A row reads the other items of its
+# own form occurrence: the date, the study day and, for KN189's ANC, HGB and
+# PLT, the grade. Derivations run on every ODM record before the filter
+# (REQ-0036), so no strict recoding happens here; the filter keeps the
+# form's records except its date, study-day and grade items.
+rows:
+  # ---- KN189 ----
+  - id: kn189-chem
+    dataset: ODM189
+    filter: "ODM189.ItemGroupOID = 'IG.NCT02578680.LB_CHEM' AND
+      ODM189.ItemOID NOT IN ('IT.NCT02578680.LB_CHEM.LBDTC',
+      'IT.NCT02578680.LB_CHEM.LBDY')"
+    derivations:
+      STUDYID: {literal: MK-3475-189}
+      USUBJID: ODM189.SubjectKey
+      FORM: {str_extract: {source: ODM189.ItemGroupOID, pattern: '[^.]+$'}}
+      ITEM: {str_extract: {source: ODM189.ItemOID, pattern: '[^.]+\.[^.]+$'}}
+      VISIT: {str_extract: {source: ODM189.StudyEventOID, pattern: '[^.]+$'}}
+      LBORRES: ODM189.Value
+      LBDTC: {odm: ODM189.IT.NCT02578680.LB_CHEM.LBDTC}
+      LBDY: {odm: ODM189.IT.NCT02578680.LB_CHEM.LBDY}
+      LBTOXGR: {literal: null}
+
+  # KN189's coagulation form has no study-day item.
+  - id: kn189-coag
+    dataset: ODM189
+    filter: "ODM189.ItemGroupOID = 'IG.NCT02578680.LB_COAG' AND
+      ODM189.ItemOID <> 'IT.NCT02578680.LB_COAG.LBDTC'"
+    derivations:
+      STUDYID: {literal: MK-3475-189}
+      USUBJID: ODM189.SubjectKey
+      FORM: {str_extract: {source: ODM189.ItemGroupOID, pattern: '[^.]+$'}}
+      ITEM: {str_extract: {source: ODM189.ItemOID, pattern: '[^.]+\.[^.]+$'}}
+      VISIT: {str_extract: {source: ODM189.StudyEventOID, pattern: '[^.]+$'}}
+      LBORRES: ODM189.Value
+      LBDTC: {odm: ODM189.IT.NCT02578680.LB_COAG.LBDTC}
+      LBDY: {literal: null}
+      LBTOXGR: {literal: null}
+
+  # The three graded hematology tests, each with its own grade item.
+  - id: kn189-hem-anc
+    dataset: ODM189
+    filter: "ODM189.ItemOID = 'IT.NCT02578680.LB_HEM.ANC'"
+    derivations:
+      STUDYID: {literal: MK-3475-189}
+      USUBJID: ODM189.SubjectKey
+      FORM: {str_extract: {source: ODM189.ItemGroupOID, pattern: '[^.]+$'}}
+      ITEM: {str_extract: {source: ODM189.ItemOID, pattern: '[^.]+\.[^.]+$'}}
+      VISIT: {str_extract: {source: ODM189.StudyEventOID, pattern: '[^.]+$'}}
+      LBORRES: ODM189.Value
+      LBDTC: {odm: ODM189.IT.NCT02578680.LB_HEM.LBDTC}
+      LBDY: {odm: ODM189.IT.NCT02578680.LB_HEM.LBDY}
+      LBTOXGR: {odm: ODM189.IT.NCT02578680.LB_HEM.ANC_GRADE}
+
+  - id: kn189-hem-hgb
+    dataset: ODM189
+    filter: "ODM189.ItemOID = 'IT.NCT02578680.LB_HEM.HGB'"
+    derivations:
+      STUDYID: {literal: MK-3475-189}
+      USUBJID: ODM189.SubjectKey
+      FORM: {str_extract: {source: ODM189.ItemGroupOID, pattern: '[^.]+$'}}
+      ITEM: {str_extract: {source: ODM189.ItemOID, pattern: '[^.]+\.[^.]+$'}}
+      VISIT: {str_extract: {source: ODM189.StudyEventOID, pattern: '[^.]+$'}}
+      LBORRES: ODM189.Value
+      LBDTC: {odm: ODM189.IT.NCT02578680.LB_HEM.LBDTC}
+      LBDY: {odm: ODM189.IT.NCT02578680.LB_HEM.LBDY}
+      LBTOXGR: {odm: ODM189.IT.NCT02578680.LB_HEM.HGB_GRADE}
+
+  - id: kn189-hem-plt
+    dataset: ODM189
+    filter: "ODM189.ItemOID = 'IT.NCT02578680.LB_HEM.PLT'"
+    derivations:
+      STUDYID: {literal: MK-3475-189}
+      USUBJID: ODM189.SubjectKey
+      FORM: {str_extract: {source: ODM189.ItemGroupOID, pattern: '[^.]+$'}}
+      ITEM: {str_extract: {source: ODM189.ItemOID, pattern: '[^.]+\.[^.]+$'}}
+      VISIT: {str_extract: {source: ODM189.StudyEventOID, pattern: '[^.]+$'}}
+      LBORRES: ODM189.Value
+      LBDTC: {odm: ODM189.IT.NCT02578680.LB_HEM.LBDTC}
+      LBDY: {odm: ODM189.IT.NCT02578680.LB_HEM.LBDY}
+      LBTOXGR: {odm: ODM189.IT.NCT02578680.LB_HEM.PLT_GRADE}
+
+  # The ungraded hematology tests: the form less the three above, their
+  # grades, the date and the study day.
+  - id: kn189-hem
+    dataset: ODM189
+    filter: "ODM189.ItemGroupOID = 'IG.NCT02578680.LB_HEM' AND
+      ODM189.ItemOID NOT IN ('IT.NCT02578680.LB_HEM.LBDTC',
+      'IT.NCT02578680.LB_HEM.LBDY', 'IT.NCT02578680.LB_HEM.ANC',
+      'IT.NCT02578680.LB_HEM.ANC_GRADE', 'IT.NCT02578680.LB_HEM.HGB',
+      'IT.NCT02578680.LB_HEM.HGB_GRADE', 'IT.NCT02578680.LB_HEM.PLT',
+      'IT.NCT02578680.LB_HEM.PLT_GRADE')"
+    derivations:
+      STUDYID: {literal: MK-3475-189}
+      USUBJID: ODM189.SubjectKey
+      FORM: {str_extract: {source: ODM189.ItemGroupOID, pattern: '[^.]+$'}}
+      ITEM: {str_extract: {source: ODM189.ItemOID, pattern: '[^.]+\.[^.]+$'}}
+      VISIT: {str_extract: {source: ODM189.StudyEventOID, pattern: '[^.]+$'}}
+      LBORRES: ODM189.Value
+      LBDTC: {odm: ODM189.IT.NCT02578680.LB_HEM.LBDTC}
+      LBDY: {odm: ODM189.IT.NCT02578680.LB_HEM.LBDY}
+      LBTOXGR: {literal: null}
+
+  - id: kn189-thy
+    dataset: ODM189
+    filter: "ODM189.ItemGroupOID = 'IG.NCT02578680.LB_THY' AND
+      ODM189.ItemOID NOT IN ('IT.NCT02578680.LB_THY.LBDTC',
+      'IT.NCT02578680.LB_THY.LBDY')"
+    derivations:
+      STUDYID: {literal: MK-3475-189}
+      USUBJID: ODM189.SubjectKey
+      FORM: {str_extract: {source: ODM189.ItemGroupOID, pattern: '[^.]+$'}}
+      ITEM: {str_extract: {source: ODM189.ItemOID, pattern: '[^.]+\.[^.]+$'}}
+      VISIT: {str_extract: {source: ODM189.StudyEventOID, pattern: '[^.]+$'}}
+      LBORRES: ODM189.Value
+      LBDTC: {odm: ODM189.IT.NCT02578680.LB_THY.LBDTC}
+      LBDY: {odm: ODM189.IT.NCT02578680.LB_THY.LBDY}
+      LBTOXGR: {literal: null}
+
+  # KN189's urinalysis form has no study-day item.
+  - id: kn189-ua
+    dataset: ODM189
+    filter: "ODM189.ItemGroupOID = 'IG.NCT02578680.LB_UA' AND
+      ODM189.ItemOID <> 'IT.NCT02578680.LB_UA.LBDTC'"
+    derivations:
+      STUDYID: {literal: MK-3475-189}
+      USUBJID: ODM189.SubjectKey
+      FORM: {str_extract: {source: ODM189.ItemGroupOID, pattern: '[^.]+$'}}
+      ITEM: {str_extract: {source: ODM189.ItemOID, pattern: '[^.]+\.[^.]+$'}}
+      VISIT: {str_extract: {source: ODM189.StudyEventOID, pattern: '[^.]+$'}}
+      LBORRES: ODM189.Value
+      LBDTC: {odm: ODM189.IT.NCT02578680.LB_UA.LBDTC}
+      LBDY: {literal: null}
+      LBTOXGR: {literal: null}
+
+  # ---- KN564: no grade items ----
+  - id: kn564-chem
+    dataset: ODM564
+    filter: "ODM564.ItemGroupOID = 'IG.NCT03142334.LB_CHEM' AND
+      ODM564.ItemOID NOT IN ('IT.NCT03142334.LB_CHEM.LBDTC',
+      'IT.NCT03142334.LB_CHEM.LBDY')"
+    derivations:
+      STUDYID: {literal: MK-3475-564}
+      USUBJID: ODM564.SubjectKey
+      FORM: {str_extract: {source: ODM564.ItemGroupOID, pattern: '[^.]+$'}}
+      ITEM: {str_extract: {source: ODM564.ItemOID, pattern: '[^.]+\.[^.]+$'}}
+      VISIT: {str_extract: {source: ODM564.StudyEventOID, pattern: '[^.]+$'}}
+      LBORRES: ODM564.Value
+      LBDTC: {odm: ODM564.IT.NCT03142334.LB_CHEM.LBDTC}
+      LBDY: {odm: ODM564.IT.NCT03142334.LB_CHEM.LBDY}
+      LBTOXGR: {literal: null}
+
+  # KN564's coagulation form has no study-day item.
+  - id: kn564-coag
+    dataset: ODM564
+    filter: "ODM564.ItemGroupOID = 'IG.NCT03142334.LB_COAG' AND
+      ODM564.ItemOID <> 'IT.NCT03142334.LB_COAG.LBDTC'"
+    derivations:
+      STUDYID: {literal: MK-3475-564}
+      USUBJID: ODM564.SubjectKey
+      FORM: {str_extract: {source: ODM564.ItemGroupOID, pattern: '[^.]+$'}}
+      ITEM: {str_extract: {source: ODM564.ItemOID, pattern: '[^.]+\.[^.]+$'}}
+      VISIT: {str_extract: {source: ODM564.StudyEventOID, pattern: '[^.]+$'}}
+      LBORRES: ODM564.Value
+      LBDTC: {odm: ODM564.IT.NCT03142334.LB_COAG.LBDTC}
+      LBDY: {literal: null}
+      LBTOXGR: {literal: null}
+
+  - id: kn564-hem
+    dataset: ODM564
+    filter: "ODM564.ItemGroupOID = 'IG.NCT03142334.LB_HEM' AND
+      ODM564.ItemOID NOT IN ('IT.NCT03142334.LB_HEM.LBDTC',
+      'IT.NCT03142334.LB_HEM.LBDY')"
+    derivations:
+      STUDYID: {literal: MK-3475-564}
+      USUBJID: ODM564.SubjectKey
+      FORM: {str_extract: {source: ODM564.ItemGroupOID, pattern: '[^.]+$'}}
+      ITEM: {str_extract: {source: ODM564.ItemOID, pattern: '[^.]+\.[^.]+$'}}
+      VISIT: {str_extract: {source: ODM564.StudyEventOID, pattern: '[^.]+$'}}
+      LBORRES: ODM564.Value
+      LBDTC: {odm: ODM564.IT.NCT03142334.LB_HEM.LBDTC}
+      LBDY: {odm: ODM564.IT.NCT03142334.LB_HEM.LBDY}
+      LBTOXGR: {literal: null}
+
+  - id: kn564-thy
+    dataset: ODM564
+    filter: "ODM564.ItemGroupOID = 'IG.NCT03142334.LB_THY' AND
+      ODM564.ItemOID NOT IN ('IT.NCT03142334.LB_THY.LBDTC',
+      'IT.NCT03142334.LB_THY.LBDY')"
+    derivations:
+      STUDYID: {literal: MK-3475-564}
+      USUBJID: ODM564.SubjectKey
+      FORM: {str_extract: {source: ODM564.ItemGroupOID, pattern: '[^.]+$'}}
+      ITEM: {str_extract: {source: ODM564.ItemOID, pattern: '[^.]+\.[^.]+$'}}
+      VISIT: {str_extract: {source: ODM564.StudyEventOID, pattern: '[^.]+$'}}
+      LBORRES: ODM564.Value
+      LBDTC: {odm: ODM564.IT.NCT03142334.LB_THY.LBDTC}
+      LBDY: {odm: ODM564.IT.NCT03142334.LB_THY.LBDY}
+      LBTOXGR: {literal: null}
+
+  - id: kn564-ua
+    dataset: ODM564
+    filter: "ODM564.ItemGroupOID = 'IG.NCT03142334.LB_UA' AND
+      ODM564.ItemOID NOT IN ('IT.NCT03142334.LB_UA.LBDTC',
+      'IT.NCT03142334.LB_UA.LBDY')"
+    derivations:
+      STUDYID: {literal: MK-3475-564}
+      USUBJID: ODM564.SubjectKey
+      FORM: {str_extract: {source: ODM564.ItemGroupOID, pattern: '[^.]+$'}}
+      ITEM: {str_extract: {source: ODM564.ItemOID, pattern: '[^.]+\.[^.]+$'}}
+      VISIT: {str_extract: {source: ODM564.StudyEventOID, pattern: '[^.]+$'}}
+      LBORRES: ODM564.Value
+      LBDTC: {odm: ODM564.IT.NCT03142334.LB_UA.LBDTC}
+      LBDY: {odm: ODM564.IT.NCT03142334.LB_UA.LBDY}
+      LBTOXGR: {literal: null}
+
+verifications:
+  - unique: [STUDYID, USUBJID, LBSEQ]
+  # One result per test, category and visit: each form occurs once per
+  # subject and visit.
+  - unique: [STUDYID, USUBJID, VISIT, LBCAT, LBTESTCD]
+  # Every numeric test converts; only urinalysis results stay text.
+  - implies:
+      id: numeric-result-converts
+      when: "LBCAT <> 'URINALYSIS'"
+      then: "LBSTRESN IS NOT NULL"
+  - implies:
+      id: urinalysis-result-is-ordinal
+      when: "LBCAT = 'URINALYSIS'"
+      then: "LBORRES IN ('NEGATIVE', 'TRACE', '1+', '2+', '3+', '4+')"

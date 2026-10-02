@@ -1,0 +1,233 @@
+schema_version: "1.0"
+domain: AE
+keys: [STUDYID, USUBJID, AESEQ]
+# The same two ODM inputs as dm_pooled.yaml, written by convert_odm.R or
+# convert_odm.py. Each study keeps its own file; the spec pools them. Every
+# recoding below is logged, with its evidence and status, in decisions_ae.md.
+input:
+  ODM189: input/kn189_odm.parquet
+  ODM564: input/kn564_odm.parquet
+
+output:
+  path: ae_pooled.csv
+  columns: [STUDYID, DOMAIN, USUBJID, AESEQ, AETERM, AEDECOD, AEBODSYS,
+    AESEV, AESER, AEACN, AEREL, AEOUT, AETOXGR, AESTDTC, AEDY, AERELGR1]
+  order_by: [STUDYID, USUBJID, AESEQ]
+
+columns:
+  # ---- Study-specific bindings: every row template supplies these. ----
+  - name: FORM
+    type: str
+    label: Source Item Group
+
+  - name: STUDYID
+    type: str
+    label: Study Identifier
+
+  # The ODM SubjectKey, as in dm_pooled.yaml, so AE links to DM.
+  - name: USUBJID
+    type: str
+    label: Unique Subject Identifier
+
+  # Verbatim: kept exactly as reported, so the case differs by study.
+  - name: AETERM
+    type: str
+    label: Reported Term for the Adverse Event
+    verifications:
+      not_missing: {}
+
+  - name: AEBODSYS
+    type: str
+    label: Body System or Organ Class
+    verifications:
+      not_missing: {}
+
+  - name: AESER
+    type: str
+    label: Serious Event
+    verifications:
+      - not_missing: {}
+      - allowed_values:
+          values: [Y, N]
+
+  # Sponsor-defined causality, kept as collected; AERELGR1 pools it.
+  - name: AEREL
+    type: str
+    label: Causality
+    verifications:
+      not_missing: {}
+
+  # Checked against the full CDISC OUT codelist, not only the values seen.
+  - name: AEOUT
+    type: str
+    label: Outcome of Adverse Event
+    verifications:
+      allowed_values:
+        values: [RECOVERED/RESOLVED, RECOVERING/RESOLVING,
+          NOT RECOVERED/NOT RESOLVED, RECOVERED/RESOLVED WITH SEQUELAE,
+          FATAL, UNKNOWN]
+
+  - name: AETOXGR
+    type: str
+    label: Standard Toxicity Grade
+    verifications:
+      allowed_values:
+        values: ['1', '2', '3', '4', '5']
+
+  # A complete date. A partial start date in a later cut stops the run;
+  # switch to str if partial dates must pass.
+  - name: AESTDTC
+    type: date
+    label: Start Date/Time of Adverse Event
+    verifications:
+      not_missing: {}
+
+  - name: AEDY
+    type: int
+    label: Study Day of Start of Adverse Event
+
+  - name: AEDECOD_RAW
+    type: str
+    label: Dictionary-Derived Term as Collected
+
+  - name: AESEV_RAW
+    type: str
+    label: Severity as Collected
+
+  - name: AEACN_RAW
+    type: str
+    label: Action Taken as Collected
+
+  # ---- Pooled harmonization: one rule for both studies. ----
+  # No `unmapped` handler: a value neither study has shown so far stops
+  # the run instead of being silently recoded. No `missing` handler either:
+  # a missing value stops the run.
+  - name: DOMAIN
+    type: str
+    label: Domain Abbreviation
+    derivation: {literal: AE}
+
+  # KN189 codes PTs in upper case, KN564 in MedDRA's mixed case. Upper case
+  # is mechanical and holds for any future PT; a dictionary would not.
+  - name: AEDECOD
+    type: str
+    label: Dictionary-Derived Term
+    derivation:
+      str_case:
+        source: AEDECOD_RAW
+        to: upper
+
+  # LIFE-THREATENING (KN189 only, always grade 4) is not in the CDISC AESEV
+  # codelist; it becomes SEVERE, and AETOXGR keeps the grade.
+  - name: AESEV
+    type: str
+    label: Severity/Intensity
+    derivation:
+      mapping:
+        source: AESEV_RAW
+        dict:
+          MILD: MILD
+          MODERATE: MODERATE
+          SEVERE: SEVERE
+          LIFE-THREATENING: SEVERE
+
+  # KN189's DOSE INTERRUPTED is DRUG INTERRUPTED in the CDISC ACN codelist.
+  - name: AEACN
+    type: str
+    label: Action Taken with Study Treatment
+    derivation:
+      mapping:
+        source: AEACN_RAW
+        dict:
+          DOSE NOT CHANGED: DOSE NOT CHANGED
+          DRUG WITHDRAWN: DRUG WITHDRAWN
+          DOSE INTERRUPTED: DRUG INTERRUPTED
+
+  # Pooled causality. POSSIBLY RELATED (KN189 only) counts as related;
+  # confirm this grouping with the SAP.
+  - name: AERELGR1
+    type: str
+    label: Pooled Causality Group 1
+    derivation:
+      mapping:
+        source: AEREL
+        dict:
+          RELATED: RELATED
+          POSSIBLY RELATED: RELATED
+          NOT RELATED: NOT RELATED
+
+  # Events numbered from 1 within each subject in collection order: by
+  # visit, then by repeat within the visit. With no order_by, ties keep
+  # row-template order, then driver order (REQ-1123). For KN189 this
+  # reproduces the collected AESEQ.
+  - name: AESEQ
+    type: int
+    label: Sequence Number
+    derivation:
+      row_number:
+        window:
+          group_by: [STUDYID, USUBJID]
+
+# One row template per study: one candidate row per item group occurrence,
+# kept only for the AE item group. Item OIDs carry the study's NCT number,
+# so each template names its own. Each item is read from its one record in
+# the occurrence: an absent item gives missing, a repeated item stops the run.
+rows:
+  - id: kn189
+    dataset: ODM189
+    group_by:
+      - ODM189.StudyOID
+      - ODM189.SubjectKey
+      - ODM189.StudyEventOID
+      - ODM189.StudyEventRepeatKey
+      - ODM189.FormOID
+      - ODM189.FormRepeatKey
+      - ODM189.ItemGroupOID
+      - ODM189.ItemGroupRepeatKey
+    filter: "FORM = 'IG.NCT02578680.AE'"
+    derivations:
+      FORM: ODM189.ItemGroupOID
+      STUDYID: {literal: MK-3475-189}
+      USUBJID: ODM189.SubjectKey
+      AETERM: {odm: ODM189.IT.NCT02578680.AE.AETERM}
+      AEDECOD_RAW: {odm: ODM189.IT.NCT02578680.AE.AEDECOD}
+      AEBODSYS: {odm: ODM189.IT.NCT02578680.AE.AEBODSYS}
+      AESEV_RAW: {odm: ODM189.IT.NCT02578680.AE.AESEV}
+      AESER: {odm: ODM189.IT.NCT02578680.AE.AESER}
+      AEACN_RAW: {odm: ODM189.IT.NCT02578680.AE.AEACN}
+      AEREL: {odm: ODM189.IT.NCT02578680.AE.AEREL}
+      AEOUT: {odm: ODM189.IT.NCT02578680.AE.AEOUT}
+      AETOXGR: {odm: ODM189.IT.NCT02578680.AE.AETOXGR}
+      AESTDTC: {odm: ODM189.IT.NCT02578680.AE.AESTDTC}
+      AEDY: {odm: ODM189.IT.NCT02578680.AE.AEDY}
+
+  - id: kn564
+    dataset: ODM564
+    group_by:
+      - ODM564.StudyOID
+      - ODM564.SubjectKey
+      - ODM564.StudyEventOID
+      - ODM564.StudyEventRepeatKey
+      - ODM564.FormOID
+      - ODM564.FormRepeatKey
+      - ODM564.ItemGroupOID
+      - ODM564.ItemGroupRepeatKey
+    filter: "FORM = 'IG.NCT03142334.AE'"
+    derivations:
+      FORM: ODM564.ItemGroupOID
+      STUDYID: {literal: MK-3475-564}
+      USUBJID: ODM564.SubjectKey
+      AETERM: {odm: ODM564.IT.NCT03142334.AE.AETERM}
+      AEDECOD_RAW: {odm: ODM564.IT.NCT03142334.AE.AEDECOD}
+      AEBODSYS: {odm: ODM564.IT.NCT03142334.AE.AEBODSYS}
+      AESEV_RAW: {odm: ODM564.IT.NCT03142334.AE.AESEV}
+      AESER: {odm: ODM564.IT.NCT03142334.AE.AESER}
+      AEACN_RAW: {odm: ODM564.IT.NCT03142334.AE.AEACN}
+      AEREL: {odm: ODM564.IT.NCT03142334.AE.AEREL}
+      AEOUT: {odm: ODM564.IT.NCT03142334.AE.AEOUT}
+      AETOXGR: {odm: ODM564.IT.NCT03142334.AE.AETOXGR}
+      AESTDTC: {odm: ODM564.IT.NCT03142334.AE.AESTDTC}
+      AEDY: {odm: ODM564.IT.NCT03142334.AE.AEDY}
+
+verifications:
+  - unique: [STUDYID, USUBJID, AESEQ]

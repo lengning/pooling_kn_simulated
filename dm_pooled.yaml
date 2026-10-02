@@ -1,0 +1,207 @@
+schema_version: "1.0"
+domain: DM
+keys: [STUDYID, USUBJID]
+# One ODM long table per study, written by convert_odm.R or convert_odm.py.
+# Each study keeps its own file; the spec pools them. Every recoding below
+# is logged, with its evidence and status, in decisions.md.
+input:
+  ODM189: input/kn189_odm.parquet
+  ODM564: input/kn564_odm.parquet
+
+output:
+  path: dm_pooled.csv
+  columns: [STUDYID, USUBJID, SUBJID, SITEID, AGE, AGEU, AGEGR1, SEX, RACE,
+    ETHNIC, COUNTRY, ARMCD, ARM, TRTPOOL]
+  order_by: [STUDYID, USUBJID]
+
+columns:
+  # ---- Study-specific bindings: every row template supplies these. ----
+  - name: STUDYID
+    type: str
+    label: Study Identifier
+
+  - name: USUBJID
+    type: str
+    label: Unique Subject Identifier
+
+  - name: SUBJID
+    type: str
+    label: Subject Identifier for the Study
+
+  - name: SITEID
+    type: str
+    label: Study Site Identifier
+
+  - name: AGE
+    type: int
+    label: Age
+
+  - name: AGEU
+    type: str
+    label: Age Units
+
+  - name: ARMCD
+    type: str
+    label: Planned Arm Code
+
+  - name: ARM
+    type: str
+    label: Description of Planned Arm
+
+  - name: SEX_RAW
+    type: str
+    label: Sex as Collected
+
+  - name: RACE_RAW
+    type: str
+    label: Race as Collected
+
+  - name: ETHNIC_RAW
+    type: str
+    label: Ethnicity as Collected
+
+  - name: COUNTRY_RAW
+    type: str
+    label: Country as Collected
+
+  # ---- Pooled harmonization: one rule for both studies. ----
+  # No `unmapped` handler: a value neither study has shown so far stops
+  # the run instead of being silently recoded.
+  # SEX is the only column with a `missing` handler (missing -> U). Both
+  # codelists (UNDIFFERENTIATED; Male/Female) disagree with the stored M/F.
+  - name: SEX
+    type: str
+    label: Sex
+    derivation:
+      mapping:
+        source: SEX_RAW
+        dict: {M: M, F: F}
+        missing: U
+
+  # KN189 collects BLACK; KN564 collects the CDISC term. OTHER (KN189) and
+  # MULTIPLE (KN564) stay as-is: no detail was collected to resolve them.
+  # No `missing` handler: a missing race stops the run.
+  - name: RACE
+    type: str
+    label: Race
+    derivation:
+      mapping:
+        source: RACE_RAW
+        dict:
+          WHITE: WHITE
+          ASIAN: ASIAN
+          BLACK: BLACK OR AFRICAN AMERICAN
+          BLACK OR AFRICAN AMERICAN: BLACK OR AFRICAN AMERICAN
+          AMERICAN INDIAN OR ALASKA NATIVE: AMERICAN INDIAN OR ALASKA NATIVE
+          MULTIPLE: MULTIPLE
+          OTHER: OTHER
+          UNKNOWN: UNKNOWN
+
+  - name: ETHNIC
+    type: str
+    label: Ethnicity
+    derivation:
+      mapping:
+        source: ETHNIC_RAW
+        dict:
+          HISPANIC OR LATINO: HISPANIC OR LATINO
+          NOT HISPANIC OR LATINO: NOT HISPANIC OR LATINO
+
+  # KN189 collects ISO 3166-1 alpha-3; KN564 collects country names.
+  - name: COUNTRY
+    type: str
+    label: Country
+    derivation:
+      mapping:
+        source: COUNTRY_RAW
+        dict:
+          AUS: AUS
+          DEU: DEU
+          ESP: ESP
+          FRA: FRA
+          GBR: GBR
+          ISR: ISR
+          ITA: ITA
+          JPN: JPN
+          KOR: KOR
+          USA: USA
+          Australia: AUS
+          Canada: CAN
+          China: CHN
+          France: FRA
+          Germany: DEU
+          Italy: ITA
+          Japan: JPN
+          'Korea, Republic of': KOR
+          Russian Federation: RUS
+          Spain: ESP
+          United Kingdom: GBR
+          United States: USA
+
+  # Cut chosen without an SAP; age 65 falls in '>=65' (left-closed).
+  - name: AGEGR1
+    type: str
+    label: Pooled Age Group 1
+    derivation:
+      cut:
+        source: AGE
+        breaks: [65]
+        labels: ['<65', '>=65']
+
+  # Pooled treatment group. KN189 control is placebo + chemotherapy and
+  # KN564 control is placebo alone; confirm this grouping with the SAP.
+  - name: TRTPOOL
+    type: str
+    label: Pooled Treatment Group
+    derivation:
+      mapping:
+        source: ARMCD
+        dict:
+          PEMBRO: Pembrolizumab
+          CONTROL: Control
+          PBO: Control
+
+# One row template per study: one row per subject, built from that study's
+# ODM. Item OIDs carry the study's NCT number, so each template names its own.
+rows:
+  - id: kn189
+    dataset: ODM189
+    group_by: [ODM189.StudyOID, ODM189.SubjectKey]
+    derivations:
+      STUDYID: {literal: MK-3475-189}
+      USUBJID: ODM189.SubjectKey
+      # KN189 collects no SUBJID item; take the trailing number of the key.
+      SUBJID:
+        str_extract:
+          source: ODM189.SubjectKey
+          pattern: '[0-9]+$'
+      SITEID: {odm: ODM189.IT.NCT02578680.DM.SITEID}
+      AGE: {odm: ODM189.IT.NCT02578680.DM.AGE}
+      AGEU: {odm: ODM189.IT.NCT02578680.DM.AGEU}
+      ARMCD: {odm: ODM189.IT.NCT02578680.DM.ARMCD}
+      ARM: {odm: ODM189.IT.NCT02578680.DM.ARM}
+      SEX_RAW: {odm: ODM189.IT.NCT02578680.DM.SEX}
+      RACE_RAW: {odm: ODM189.IT.NCT02578680.DM.RACE}
+      ETHNIC_RAW: {odm: ODM189.IT.NCT02578680.DM.ETHNIC}
+      COUNTRY_RAW: {odm: ODM189.IT.NCT02578680.DM.COUNTRY}
+
+  - id: kn564
+    dataset: ODM564
+    group_by: [ODM564.StudyOID, ODM564.SubjectKey]
+    derivations:
+      STUDYID: {literal: MK-3475-564}
+      USUBJID: ODM564.SubjectKey
+      SUBJID: {odm: ODM564.IT.NCT03142334.DM.SUBJID}
+      SITEID: {odm: ODM564.IT.NCT03142334.DM.SITEID}
+      AGE: {odm: ODM564.IT.NCT03142334.DM.AGE}
+      # KN564 collects no age unit; YEARS is assumed.
+      AGEU: {literal: YEARS}
+      ARMCD: {odm: ODM564.IT.NCT03142334.DM.ARMCD}
+      ARM: {odm: ODM564.IT.NCT03142334.DM.ARM}
+      SEX_RAW: {odm: ODM564.IT.NCT03142334.DM.SEX}
+      RACE_RAW: {odm: ODM564.IT.NCT03142334.DM.RACE}
+      ETHNIC_RAW: {odm: ODM564.IT.NCT03142334.DM.ETHNIC}
+      COUNTRY_RAW: {odm: ODM564.IT.NCT03142334.DM.COUNTRY}
+
+verifications:
+  - unique: [STUDYID, USUBJID]

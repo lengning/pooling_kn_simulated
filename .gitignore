@@ -1,0 +1,14 @@
+# Recreated by the scripts
+input/
+*_r.csv
+/dm_pooled.csv
+/ae_pooled.csv
+/lb_pooled.csv
+reference/lb_pooled_simulated.csv
+
+# Python and R clutter
+__pycache__/
+.venv/
+.Rhistory
+.RData
+.Rproj.user/
