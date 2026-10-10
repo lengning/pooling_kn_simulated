@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Is Pooling Legacy Trials Still Painful? (Substack version)</title>
+<style>
+ body{font-family:Georgia,'Times New Roman',serif;max-width:720px;margin:32px auto;padding:0 16px;line-height:1.6;color:#222;background:#fff}
+ .meta{font-family:-apple-system,Helvetica,Arial,sans-serif;background:#f4f4f2;border:1px solid #ddd;border-radius:8px;padding:14px 16px;margin-bottom:28px;font-size:14px}
+ .meta b{display:inline-block;width:70px;color:#666}
+ .meta .v{font-size:16px;color:#111}
+ button{font:inherit;margin:4px 6px 0 0;padding:6px 12px;border:1px solid #bbb;border-radius:6px;background:#fff;cursor:pointer}
+ #status{color:#2a7a2a;margin-left:6px}
+ pre{background:#f6f6f6;padding:12px;overflow-x:auto;font-size:13px;line-height:1.45}
+ code{font-family:Menlo,Consolas,monospace;font-size:0.9em}
+ blockquote{border-left:3px solid #ccc;margin:0;padding-left:14px;color:#444}
+</style></head><body>
+<div class="meta">
+ <div><b>Title</b> <span class="v" id="t">Is Pooling Legacy Trials Still Painful?</span></div>
+ <div><b>Subtitle</b> <span class="v" id="s">How a coding agent and a strict YAML spec pooled two simulated oncology trials, and what still needed a person</span></div>
+ <div style="margin-top:8px">
+  <button onclick="cp('t')">Copy title</button><button onclick="cp('s')">Copy subtitle</button><button onclick="cp('article')">Copy article body</button><span id="status"></span>
+ </div>
+</div>
+<article id="article">
+<p>I’m looking into designing trials of an emerging molecule and wondered how one factor relates to another across indications. Legacy trials could answer it. But I remember how painful pooling legacy data can be. Each study names the same item differently, codes the same answer differently and collects things the others skipped. Most of those differences surface only after someone starts programming, which sends the work back to the specification, over and over. Would my question be worth that effort?</p>
+<p>Then I thought of <a href="https://github.com/elong0527/yamaa">yamaa</a>, a framework from our BBSW AI committee member Yilong Zhang for writing a clinical dataset’s specification in YAML. Could it make pooling less painful? This post is my answer.</p>
+<p>The job was to pool demographics (DM), adverse events (AE) and lab results (LB) from two simulated oncology trials. simu-KEYNOTE-189 has 616 simulated subjects with metastatic lung cancer; simu-KEYNOTE-564 has 994 with kidney cancer after surgery. They made a useful test: their control arms differ, their lab tests use different names, and one study collects items the other does not. Even a familiar variable such as race needs a harmonization rule.</p>
+<p>I gave the job to Claude Code, a coding agent, working with yamaa. If you haven’t used a coding agent, think of a chat assistant that can also work in your project folder: you give it a goal, and it reads files, writes code, runs it, reads the output or the error, and decides what to do next. It repeats that loop until the job is done or it needs you. yamaa works alongside that assistant as its rulebook and quality auditor: it defines how a dataset specification must be written, and it stops the run whenever the data or the spec breaks those rules.</p>
+<p>In practice, they split the work like this:</p>
+<ul>
+<li><strong>yamaa defines the spec.</strong> A spec says what each column of a dataset means and how it is derived from the raw export.</li>
+<li><strong>Claude Code does what a programmer would otherwise do by hand.</strong> It reads yamaa’s documentation and worked examples, profiles the raw data, writes the spec and runs it.</li>
+<li><strong>When a check stops the run, the agent fixes the spec.</strong> A race value missing from the dictionary, for example, stops the run; the agent reads the error, looks at the data and adds a rule. That loop (look at the data, write a rule, run it, hit a surprise, fix the rule) is the tedious part of pooling.</li>
+<li><strong>Each fix is recorded.</strong> It becomes an explicit rule in the spec, and the agent logs it as a decision with its evidence.</li>
+</ul>
+<p>Why not let the agent write the pooling code directly? It could. Claude Code can write R or Python that reads both exports and produces the datasets. But the harmonization rules would then be scattered through that code, and reviewing them would mean reading it line by line. Nothing would force a stop on an unexpected value, either: a script that meets a new race code can just as easily drop it, pass it through or lump it into “OTHER” without telling anyone. yamaa narrows the agent’s choices. Its worked examples show the agent which conventions to follow, the YAML spec is short enough for a statistician to review rule by rule, and its strictness turns a surprise into a stopped run rather than a quiet error in the output. The agent brings speed; yamaa makes the result reviewable.</p>
+<p>I set the scope and the order (DM, then AE, then LB) and let the agent work. It returned three draft datasets (1,610 subjects, 9,137 adverse events and 510,912 lab results) and a ranked list of the decisions that needed a person.</p>
+<p>The short answer: noticeably less painful! But not painless. I wrote no derivation code. The effort moved from programming to review, and a few questions, such as missing lab units, still needed someone who knows the studies.</p>
+<blockquote>
+<p><strong>Simulated data.</strong> The <a href="https://github.com/RConsortium/submissions-pilot7-synthetic-data">synthetic datasets</a> follow the KEYNOTE-189 and KEYNOTE-564 protocols and were provided by the R Consortium Submissions Working Group (Pilot 7) in collaboration with BBSW. They contain no real patient data. The results below illustrate the workflow and say nothing about pembrolizumab.</p>
+</blockquote>
+<p>The <a href="https://github.com/lengning/pooling_kn_simulated/blob/main/blog/technical-appendix.md">technical appendix</a> contains the execution commands, longer YAML examples and detailed output tables.</p>
+<h2 id="how-the-pooling-works">How the pooling works</h2>
+<p>yamaa expresses a clinical-data specification in YAML: what rows a dataset contains, what its columns mean and how their values are derived. These specs start from the Operational Data Model (ODM) XML exported by an electronic data capture (EDC) system. A converter makes a long table with one record per collected item, carrying its study, subject, visit and form identifiers.</p>
+<p>The pooling design has three parts:</p>
+<ul>
+<li><strong>Study-specific templates</strong> read each study’s items into common columns. Where values need recoding, they first go into neutral columns such as <code>RACE_RAW</code>.</li>
+<li><strong>Shared derivations</strong> apply the pooling rules once, across both studies. A dictionary can turn two collected terms into one output term.</li>
+<li><strong>Strict checks</strong> stop the run when a value or structure falls outside the specification. The agent has to resolve a surprise explicitly before the run can continue.</li>
+</ul>
+<p>The distinction between templates and shared derivations matters because the studies cannot share one item binding. simu-KEYNOTE-189’s race item is <code>IT.NCT02578680.DM.RACE</code>; simu-KEYNOTE-564’s is <code>IT.NCT03142334.DM.RACE</code>. Each template reads its own item into the same intermediate column:</p>
+<pre class="yaml"><code>rows:
+  - id: kn189
+    dataset: ODM189
+    group_by: [ODM189.StudyOID, ODM189.SubjectKey]
+    derivations:
+      RACE_RAW: {odm: ODM189.IT.NCT02578680.DM.RACE}
+
+  - id: kn564
+    dataset: ODM564
+    group_by: [ODM564.StudyOID, ODM564.SubjectKey]
+    derivations:
+      RACE_RAW: {odm: ODM564.IT.NCT03142334.DM.RACE}</code></pre>
+<p><em>Excerpt from <a href="https://github.com/lengning/pooling_kn_simulated/blob/main/dm_pooled.yaml">dm_pooled.yaml</a>, showing only the race bindings.</em></p>
+<p>The templates’ rows are stacked, then the shared race mapping runs over all of them. A reviewer can inspect the study bindings separately from the pooling rule. Adding another study would mean adding its bindings and reviewing any new values against the shared dictionaries.</p>
+<p>The agent followed a simple cycle: <strong>profile → specify → run → check</strong>. Before writing YAML, it read the relevant yamaa rules and worked examples, then queried both studies. Which forms existed? Which items repeated? What values were actually stored? The last question mattered: the declared race codelists did not match the collected values, so the mapping had to follow the data.</p>
+<p>The three domains used the same design, with different rules for building rows:</p>
+<p><strong>DM: one row per subject.</strong> Each study’s template groups records by subject and reads its demographic items. Shared mappings harmonize race, sex and country. Every template must supply the same columns; simu-KEYNOTE-564 has no age-unit item, so its template supplies the provisional literal <code>YEARS</code>.</p>
+<p><strong>AE: one row per event.</strong> Each occurrence of the repeating adverse-event form becomes a row. Shared rules harmonize preferred-term case, severity and action taken. A sequence number follows collection order within each subject. That choice had a useful check: it reproduced all 6,869 sequence numbers collected in simu-KEYNOTE-189, while also supplying numbers for simu-KEYNOTE-564, which collected none.</p>
+<p><strong>LB: one row per result.</strong> Each lab-test item becomes a row and reads its date and, where present, its grade from its own form occurrence. This avoided a subtle error: simu-KEYNOTE-189’s screening coagulation samples were dated three days before the other screening labs. Taking one date per visit would have misdated those 616 results. Shared mappings harmonize test names while preserving distinctions such as free T3 versus total T3.</p>
+<p>Once the three datasets were built, the agent joined AE and LB by study and subject to compare TSH results for subjects with and without a hypothyroidism event. The <a href="https://github.com/lengning/pooling_kn_simulated/blob/main/blog/technical-appendix.md#cross-domain-analysis-examples">analysis example</a> demonstrates that the datasets connect and support a cross-domain question. Its numbers come from simulated data, and the TSH unit was inferred.</p>
+<h2 id="two-decisions-up-close">Two decisions, up close</h2>
+<p>The useful output was more than the datasets. Each domain had a decision log recording the rule, the evidence and a status:</p>
+<ul>
+<li><strong>Mechanical:</strong> follows from the data or a convention.</li>
+<li><strong>Choice:</strong> one reasonable option among several.</li>
+<li><strong>Assumption:</strong> something the available data cannot confirm.</li>
+</ul>
+<p>The three logs contain 57 entries: 28 mechanical, 23 choices and 6 assumptions. These labels make the review queue easier to read, but they do not settle whether a decision is acceptable. Two examples show the difference between a straightforward recode and an analysis choice.</p>
+<h3 id="race-a-term-that-can-be-harmonized">Race: a term that can be harmonized</h3>
+<p>simu-KEYNOTE-189 records <code>BLACK</code>; simu-KEYNOTE-564 records <code>BLACK OR AFRICAN AMERICAN</code>. The agent mapped both to the CDISC term. simu-KEYNOTE-189 also has <code>OTHER</code>, and simu-KEYNOTE-564 has <code>MULTIPLE</code>, with no detail collected to resolve either. It kept those values as collected.</p>
+<p>The study templates above supply <code>RACE_RAW</code>. The shared derivation contains the decision:</p>
+<pre class="yaml"><code>- name: RACE
+  derivation:
+    mapping:
+      source: RACE_RAW
+      dict:
+        BLACK: BLACK OR AFRICAN AMERICAN
+        BLACK OR AFRICAN AMERICAN: BLACK OR AFRICAN AMERICAN
+        OTHER: OTHER
+        MULTIPLE: MULTIPLE
+        # Other observed values are listed in the full spec.</code></pre>
+<p>The log calls the <code>BLACK</code> recode Mechanical and the handling of <code>OTHER</code> and <code>MULTIPLE</code> a Choice. A reviewer can see both the evidence and the boundary of what the agent resolved: it standardized a term, while keeping categories for which the source offered no further detail.</p>
+<p>There is no catch-all mapping. A new race value in a later data cut will stop the run and name the value. A missing race also stops it. This makes the dictionary a continuing point of review, rather than a rule that quietly absorbs whatever arrives.</p>
+<h3 id="treatment-a-grouping-that-needs-an-analysis-plan">Treatment: a grouping that needs an analysis plan</h3>
+<p>Both studies have a pembrolizumab arm, but their controls are different. simu-KEYNOTE-189’s control is placebo plus pemetrexed and platinum; simu-KEYNOTE-564’s is placebo alone. The agent provisionally put both under one label so the pipeline could run:</p>
+<pre class="yaml"><code>- name: TRTPOOL
+  derivation:
+    mapping:
+      source: ARMCD
+      dict:
+        PEMBRO: Pembrolizumab
+        CONTROL: Control   # KEYNOTE-189: placebo + chemotherapy
+        PBO: Control       # KEYNOTE-564: placebo alone</code></pre>
+<p>The log marks this <strong>Choice, needs SAP</strong> (statistical analysis plan). The agent put it first in its ranked review list. A statistician still needs to decide whether that grouping suits the intended analysis or whether the controls should remain separate. The shared word “Control” does not establish that the comparators are interchangeable.</p>
+<p>The original study and arm columns are retained, so a reviewer can trace the grouping back to its sources. Changing the pooled labels means editing the mapping and rerunning the spec. The agent did not need to rewrite the source data to make its provisional choice executable.</p>
+<p>Smaller decisions followed the same pattern. <code>GLUCOSE</code> and <code>GLUC</code> became one serum glucose test code, while urine glucose remained distinguishable by category and specimen. The agent inferred mg/dL for serum glucose from the values because neither export declared a unit. It also supplied <code>YEARS</code> for simu-KEYNOTE-564’s missing age-unit item. Those are logged assumptions, with <a href="https://github.com/lengning/pooling_kn_simulated/blob/main/blog/technical-appendix.md#additional-mapping-examples">the detailed examples in the appendix</a>.</p>
+<p>The logs are what make these choices reviewable. A finished dataset does not reveal why two values were combined or why a missing item was filled. A log ties the output rule to evidence and tells the reviewer where the agent had to go beyond it.</p>
+<h2 id="how-the-output-was-checked">How the output was checked</h2>
+<p>The agent tested several different parts of the workflow. Some checks tested the specification’s constraints; others compared implementations or used collected values as known answers.</p>
+<ul>
+<li><strong>Specification checks</strong> (keys, required values, allowed values and numeric conversion): All passed for DM, AE and LB.</li>
+<li><strong>R converter compared with yamaa’s own converter:</strong> The 11 schema fields matched row for row in both studies.</li>
+<li><strong>R output compared with separate Python simulations using pivots and joins:</strong> Zero differing rows across all three datasets.</li>
+<li><strong>Known answers and cross-domain links:</strong> All 6,869 collected simu-KEYNOTE-189 AE sequence numbers matched; every AE and LB subject was present in DM.</li>
+<li><strong>Six deliberately broken specs:</strong> All six stopped with a clear message.</li>
+</ul>
+<p>The break-it tests mattered because a passing run alone cannot show that a check will catch an error. The agent removed dictionary entries, introduced a value outside an allowed list and removed a numeric-conversion handler. The runs stopped, demonstrating that those constraints were active.</p>
+<p>Date checks also found a source-data problem. simu-KEYNOTE-564’s study days agreed with its dates. In simu-KEYNOTE-189, screening dates and study days disagreed for several lab forms and 76 adverse events. The agent preserved the collected values and put the discrepancy on the review list.</p>
+<p><strong>Agreement between the implementations is useful evidence, with limits.</strong> The same agent wrote the R runner and Python simulations. They build the outputs differently, but a shared misunderstanding of a yamaa rule could survive both. The R runner implements a subset of the framework and reflects the agent’s reading of those rules.</p>
+<p>The remaining execution check is to run the specs through the official engine on Linux, macOS or WSL and compare the outputs. Even that would test execution rather than resolve the provisional treatment grouping or confirm inferred lab units. Those questions need review of the evidence and the intended analysis.</p>
+<p>The <a href="https://github.com/lengning/pooling_kn_simulated/blob/main/blog/technical-appendix.md#detailed-validation">full validation table</a> records the additional checks and their limits. The datasets remain drafts while these execution and review questions are open.</p>
+<h2 id="what-still-needs-a-person">What still needs a person</h2>
+<p>I set the scope and asked for a ranked review list at the end. In between, the agent made provisional decisions and logged them without stopping to ask questions. The final handback concentrated attention on the items below.</p>
+<ul>
+<li><strong>Treatment grouping:</strong> Whether combining the two control arms fits the planned analysis.</li>
+<li><strong>Other analysis choices:</strong> The age cut at 65, counting “possibly related” as related, and the severity mapping.</li>
+<li><strong>Lab units and specimens:</strong> Confirm the inferred units and specimen assignments with the data providers.</li>
+<li><strong>Screening dates and possible duplicate AEs:</strong> Resolve the date discrepancy and review 16 events sharing another event’s subject, term and start date.</li>
+<li><strong>Terminology:</strong> Spot-check the lab test codes, AE action-taken mapping and country codes.</li>
+</ul>
+<p>Two items deserve more than a table row.</p>
+<p><strong>Lab units affect the interpretation of every result.</strong> Neither ODM export declares units. The agent inferred them from value ranges that agreed between studies and found five supported by simu-KEYNOTE-564’s item descriptions. The remaining assignments still need confirmation. Similar scales are evidence for an assumption; they do not make the unit a collected fact. The specimen assignments also come from the forms rather than collected specimen values.</p>
+<p><strong>The screening-date discrepancy blocks the planned lab baseline derivation.</strong> simu-KEYNOTE-189’s screening chemistry, hematology, thyroid and urinalysis forms carry the same dates as day 1. Where a study day is collected, it says -28. The screening coagulation dates are a separate finding, three days earlier. Until the providers resolve the conflict, a date-based rule cannot reliably distinguish screening from day 1 for the affected results.</p>
+<p>The review list also separates an analysis choice from the source value. simu-KEYNOTE-189’s <code>LIFE-THREATENING</code> severity became <code>SEVERE</code>, with the collected grade 4 retained in the toxicity-grade column. “Possibly related” remains in the collected causality column while a new grouping variable counts it as related. A reviewer can inspect the proposed grouping alongside the information it summarizes.</p>
+<p>Batch review worked well for choices that were easy to change and easier to judge together. The units question is the exception: I would rather the agent had raised it as soon as it discovered the missing metadata. Finishing the pipeline did not make that assumption less important.</p>
+<p>The full evidence remains in the <a href="https://github.com/lengning/pooling_kn_simulated/blob/main/decisions.md">DM</a>, <a href="https://github.com/lengning/pooling_kn_simulated/blob/main/decisions_ae.md">AE</a> and <a href="https://github.com/lengning/pooling_kn_simulated/blob/main/decisions_lb.md">LB</a> decision logs. Each entry gives a reviewer something to check (a count, a collected value or a rule) and a place to change the specification. The source exports remain intact.</p>
+<h2 id="what-changes-for-the-programmer">What changes for the programmer</h2>
+<p>The work moved. I wrote no derivation code. My time went into setting the scope, reading the evidence and deciding which provisional rules were suitable for the intended analysis. The agent did the data discovery and repeated runs that usually consume much of the pooling loop.</p>
+<p>Three practices made that useful:</p>
+<ol type="1">
+<li><strong>Require a decision log with evidence and status.</strong> It turns a completed spec into a set of decisions someone can review.</li>
+<li><strong>Keep the spec strict and test its failures.</strong> Unexpected values should stop the run; deliberately broken inputs show whether the checks work.</li>
+<li><strong>Ask for a ranked handback and name the remaining checks.</strong> Review the assumptions and analysis choices, compare implementations, and keep any unperformed engine check visible.</li>
+</ol>
+<p>The next data cut will bring its own surprises. A strict spec will stop at an unfamiliar value, and its decision log will give the reviewer the context for adding the next rule. The discovery loop continues, with more of its work captured in artifacts a person can inspect and revise.</p>
+
+</article>
+<script>
+function cp(id){
+  var el=document.getElementById(id), r=document.createRange(), sel=window.getSelection();
+  r.selectNodeContents(el); sel.removeAllRanges(); sel.addRange(r);
+  var ok=false; try{ok=document.execCommand('copy');}catch(e){}
+  sel.removeAllRanges();
+  document.getElementById('status').textContent = ok ? 'Copied. Paste into Substack.' : 'Select the text and press Cmd+C.';
+}
+</script>
+</body></html>

@@ -1,4 +1,4 @@
-# Two Trials, One Spec: Technical Appendix
+# Is Pooling Legacy Trials Still Painful? Technical Appendix
 
 [Back to the main article](README.md).
 
@@ -12,8 +12,8 @@ Jump to [input and specification basics](#specification-basics-and-odm-input), [
 
 The data come from the R Consortium Submissions Working Group's Pilot 7, which publishes simulated trials modelled on real protocols:
 
-- **KEYNOTE-189** (NCT02578680): pembrolizumab plus pemetrexed and platinum, against placebo plus the same chemotherapy, in metastatic non-squamous non-small cell lung cancer. 616 simulated subjects.
-- **KEYNOTE-564** (NCT03142334): adjuvant pembrolizumab against placebo after surgery for renal cell carcinoma. 994 simulated subjects.
+- **simu-KEYNOTE-189** (NCT02578680): pembrolizumab plus pemetrexed and platinum, against placebo plus the same chemotherapy, in metastatic non-squamous non-small cell lung cancer. 616 simulated subjects.
+- **simu-KEYNOTE-564** (NCT03142334): adjuvant pembrolizumab against placebo after surgery for renal cell carcinoma. 994 simulated subjects.
 
 Different indications, different control arms, different case report forms. That makes for a realistic pooling problem.
 
@@ -50,7 +50,7 @@ In practice, the sex mapping above has no `unmapped:` entry, so a value other th
 
 ### What the input looks like
 
-yamaa reads ODM as one long table: one row per recorded item, together with the study, visit, form and item group it belongs to. The table always has the same eleven fields. These rows are taken directly from the simulated KEYNOTE-189 export, for one subject:
+yamaa reads ODM as one long table: one row per recorded item, together with the study, visit, form and item group it belongs to. The table always has the same eleven fields. These rows are taken directly from the simu-KEYNOTE-189 export, for one subject:
 
 | SubjectKey | StudyEventOID | ItemGroupOID | Repeat | ItemOID | Value |
 |---|---|---|---|---|---|
@@ -63,7 +63,7 @@ yamaa reads ODM as one long table: one row per recorded item, together with the 
 
 *Six of the eleven fields. The others are StudyOID, MetaDataVersionOID, StudyEventRepeatKey, FormOID and FormRepeatKey.*
 
-Every identifier carries the study's NCT number. That small detail shapes the whole design, because a spec that reads `IT.NCT02578680.DM.SEX` cannot read KEYNOTE-564's sex item, which is `IT.NCT03142334.DM.SEX`.
+Every identifier carries the study's NCT number. That small detail shapes the whole design, because a spec that reads `IT.NCT02578680.DM.SEX` cannot read simu-KEYNOTE-564's sex item, which is `IT.NCT03142334.DM.SEX`.
 
 ## Conversion and execution
 
@@ -71,7 +71,7 @@ Run the commands below from the repository root.
 
 ### Convert ODM XML
 
-A short R script converts each study's ODM XML into the eleven-field table: 908,490 item records for KEYNOTE-189 and 886,621 for KEYNOTE-564. The agent then ran yamaa's own Python converter on the same files and compared the two. The eleven fields matched row for row in both studies.
+A short R script converts each study's ODM XML into the eleven-field table: 908,490 item records for simu-KEYNOTE-189 and 886,621 for simu-KEYNOTE-564. The agent then ran yamaa's own Python converter on the same files and compared the two. The eleven fields matched row for row in both studies.
 
 ### The R runner and official engine
 
@@ -110,12 +110,12 @@ That shortcut has a cost, which I come back to in [Detailed validation](#detaile
 
 ### DM: one row per subject
 
-The two studies cannot share item bindings. Their item OIDs differ, they collect different items (KEYNOTE-189 records an age unit but no subject ID; KEYNOTE-564 the reverse), and they code values differently. So the spec has two layers:
+The two studies cannot share item bindings. Their item OIDs differ, they collect different items (simu-KEYNOTE-189 records an age unit but no subject ID; simu-KEYNOTE-564 the reverse), and they code values differently. So the spec has two layers:
 
 | Layer | What it does |
 |---|---|
-| KEYNOTE-189 template | Reads `kn189_odm`, one row per subject, binds its items to `*_RAW` columns |
-| KEYNOTE-564 template | Reads `kn564_odm`, one row per subject, binds its items to `*_RAW` columns |
+| simu-KEYNOTE-189 template | Reads `kn189_odm`, one row per subject, binds its items to `*_RAW` columns |
+| simu-KEYNOTE-564 template | Reads `kn564_odm`, one row per subject, binds its items to `*_RAW` columns |
 | Shared columns | One mapping per variable recodes the `*_RAW` values for both studies |
 | Checks | Types, unique keys, allowed values; any surprise stops the run |
 
@@ -149,7 +149,7 @@ rows:
 
 *Excerpt from `dm_pooled.yaml`*
 
-The second layer is shared. Column derivations such as the race mapping in the main article and the sex mapping above recode the raw values once, for both studies. Every template must produce the same columns (REQ-0200), so a study that lacks an item writes a literal instead, as KEYNOTE-564 does for `AGEU`.
+The second layer is shared. Column derivations such as the race mapping in the main article and the sex mapping above recode the raw values once, for both studies. Every template must produce the same columns (REQ-0200), so a study that lacks an item writes a literal instead, as simu-KEYNOTE-564 does for `AGEU`.
 
 An earlier agent session had drafted this DM spec in a sandbox with no R, so it had never run. Here it ran on the first try: 1,610 subjects, identical to a reference file that the earlier session had produced with a separate simulation. Here is one subject from each study:
 
@@ -158,7 +158,7 @@ An earlier agent session had drafted this DM spec in a sandbox with no R, so it 
 | MK-3475-189 | KEYNOTE189_SIM-SITE001-0028 | 73 | >=65 | M | WHITE | NOT HISPANIC OR LATINO | USA | PEMBRO | Pembrolizumab |
 | MK-3475-564 | KEYNOTE564-S001-0011 | 50 | <65 | M | WHITE | NOT HISPANIC OR LATINO | JPN | PBO | Control |
 
-*From `dm_pooled_r.csv`; SUBJID, SITEID, AGEU and ARM omitted. KEYNOTE-564 collects its country as "Japan"; the shared mapping turned it into JPN.*
+*From `dm_pooled_r.csv`; SUBJID, SITEID, AGEU and ARM omitted. simu-KEYNOTE-564 collects its country as "Japan"; the shared mapping turned it into JPN.*
 
 ### AE: one row per event
 
@@ -192,9 +192,9 @@ The sequence number comes from a window function. With no `order_by`, ties keep 
           group_by: [STUDYID, USUBJID]
 ```
 
-That choice could be checked. KEYNOTE-189 collects its own AESEQ, and the derived one matched it for all 6,869 events. KEYNOTE-564 collects none, so one rule now covers both studies.
+That choice could be checked. simu-KEYNOTE-189 collects its own AESEQ, and the derived one matched it for all 6,869 events. simu-KEYNOTE-564 collects none, so one rule now covers both studies.
 
-Most of the judgment in AE went into harmonization. KEYNOTE-189 codes preferred terms in upper case (`NEUTROPENIA`) and KEYNOTE-564 in MedDRA's mixed case (`Cough`). KEYNOTE-189 also has a `LIFE-THREATENING` severity that isn't in the CDISC codelist, a `POSSIBLY RELATED` causality, and `DOSE INTERRUPTED` where CDISC says `DRUG INTERRUPTED`. Each of these got a rule in the spec and an entry in the log. The result is 9,137 events. Here are the same two subjects:
+Most of the judgment in AE went into harmonization. simu-KEYNOTE-189 codes preferred terms in upper case (`NEUTROPENIA`) and simu-KEYNOTE-564 in MedDRA's mixed case (`Cough`). simu-KEYNOTE-189 also has a `LIFE-THREATENING` severity that isn't in the CDISC codelist, a `POSSIBLY RELATED` causality, and `DOSE INTERRUPTED` where CDISC says `DRUG INTERRUPTED`. Each of these got a rule in the spec and an entry in the log. The result is 9,137 events. Here are the same two subjects:
 
 | USUBJID | AESEQ | AETERM | AEDECOD | AESEV | AESER | AEREL | AERELGR1 | AETOXGR | AESTDTC | AEDY |
 |---|---:|---|---|---|---|---|---|---|---|---:|
@@ -206,7 +206,7 @@ Most of the judgment in AE went into harmonization. KEYNOTE-189 codes preferred 
 
 *From `ae_pooled_r.csv`; STUDYID, DOMAIN, AEBODSYS, AEACN and AEOUT omitted. The first subject has 8 events; the first three are shown.*
 
-Three decisions are visible in these rows. AEDECOD is upper case for both studies, while AETERM keeps each study's own case. KEYNOTE-189's "possibly related" nausea counts as related in AERELGR1. And AESEQ follows collection order, so the nausea that began on 3 April is event 3, after a neutropenia that began on 11 April. The second neutropenia is grade 4, which KEYNOTE-189 recorded as `LIFE-THREATENING`; AESEV now says `SEVERE`.
+Three decisions are visible in these rows. AEDECOD is upper case for both studies, while AETERM keeps each study's own case. simu-KEYNOTE-189's "possibly related" nausea counts as related in AERELGR1. And AESEQ follows collection order, so the nausea that began on 3 April is event 3, after a neutropenia that began on 11 April. The second neutropenia is grade 4, which simu-KEYNOTE-189 recorded as `LIFE-THREATENING`; AESEV now says `SEVERE`.
 
 ### LB: one row per result
 
@@ -228,7 +228,7 @@ The interesting part is the date. A record-driven row can read the other items o
 
 *Excerpt from `lb_pooled.yaml`, comment added*
 
-This turned out to matter. While profiling, the agent found that every KEYNOTE-189 subject's screening coagulation sample was drawn three days before the other screening labs. A design that took one date per visit would have misdated those 616 results.
+This turned out to matter. While profiling, the agent found that every simu-KEYNOTE-189 subject's screening coagulation sample was drawn three days before the other screening labs. A design that took one date per visit would have misdated those 616 results.
 
 The two studies name their tests differently, so one shared mapping turns item names into CDISC test codes:
 
@@ -248,7 +248,7 @@ The two studies name their tests differently, so one shared mapping turns item n
 
 *Excerpt from `lb_pooled.yaml`, comments added; the full dictionary has 30 entries*
 
-KEYNOTE-189 also records toxicity grades for three hematology tests. Each of those tests got its own template so its results could read their own grade item. In all, the LB spec has 13 templates and produces 510,912 results. Here are four of the first subject's screening results:
+simu-KEYNOTE-189 also records toxicity grades for three hematology tests. Each of those tests got its own template so its results could read their own grade item. In all, the LB spec has 13 templates and produces 510,912 results. Here are four of the first subject's screening results:
 
 | LBSEQ | LBTESTCD | LBCAT | LBORRES | LBORRESU | LBSTRESN | LBTOXGR | VISIT | LBDTC | LBDY |
 |---:|---|---|---|---|---:|---|---|---|---:|
@@ -259,13 +259,13 @@ KEYNOTE-189 also records toxicity grades for three hematology tests. Each of tho
 
 *From `lb_pooled_r.csv`, subject KEYNOTE189_SIM-SITE001-0028; STUDYID, DOMAIN, USUBJID, LBTEST, LBSPEC, LBSTRESC and LBSTRESU omitted.*
 
-Each row shows a decision from the lab specification. The coagulation result carries its own form's date, three days before the others, and has no study day because its form has none. The neutrophil count carries KEYNOTE-189's collected grade. The urine protein result has no unit and no numeric value. The ALT and neutrophil rows also show the screening-date problem recorded in [the lab decision log](../decisions_lb.md#data-findings-behind-these-decisions): they are dated 1 April, the same day as this subject's C1D1 visit, with a study day of -28. Urinalysis has the same date discrepancy but no collected study day.
+Each row shows a decision from the lab specification. The coagulation result carries its own form's date, three days before the others, and has no study day because its form has none. The neutrophil count carries simu-KEYNOTE-189's collected grade. The urine protein result has no unit and no numeric value. The ALT and neutrophil rows also show the screening-date problem recorded in [the lab decision log](../decisions_lb.md#data-findings-behind-these-decisions): they are dated 1 April, the same day as this subject's C1D1 visit, with a study day of -28. Urinalysis has the same date discrepancy but no collected study day.
 
 ## Additional mapping examples
 
 ### Glucose: four item names, two specimens, one test code
 
-**Found.** Serum glucose is the item `GLUCOSE` in KEYNOTE-189 and `GLUC` in KEYNOTE-564. Both sit on the same scale (medians 102 and 98), which fits mg/dL. Urine glucose is two more items, `UGLU` and `UAGLUC`, and every result is `NEGATIVE`. Neither ODM declares a unit.
+**Found.** Serum glucose is the item `GLUCOSE` in simu-KEYNOTE-189 and `GLUC` in simu-KEYNOTE-564. Both sit on the same scale (medians 102 and 98), which fits mg/dL. Urine glucose is two more items, `UGLU` and `UAGLUC`, and every result is `NEGATIVE`. Neither ODM declares a unit.
 
 **Decided.** All four items become test code `GLUC`. The category and specimen columns tell serum from urine. Serum results get mg/dL; urine results get no unit.
 
@@ -289,9 +289,9 @@ LB_UA.UAGLUC: null
 
 ### Age unit: an item one study never collected
 
-**Found.** KEYNOTE-189 collects an age unit, `YEARS` for all 616 subjects. KEYNOTE-564's demographics form has no age-unit item; its ages run from 19 to 88.
+**Found.** simu-KEYNOTE-189 collects an age unit, `YEARS` for all 616 subjects. simu-KEYNOTE-564's demographics form has no age-unit item; its ages run from 19 to 88.
 
-**Decided.** KEYNOTE-564's AGEU is the literal `YEARS`. Every row template must produce the same columns (REQ-0200), so the missing item has to be filled somehow, and that age range only makes sense in years.
+**Decided.** simu-KEYNOTE-564's AGEU is the literal `YEARS`. Every row template must produce the same columns (REQ-0200), so the missing item has to be filled somehow, and that age range only makes sense in years.
 
 **Implemented.**
 
@@ -319,16 +319,16 @@ Hypothyroidism, an immune-related adverse event, shows up in both indications at
 | Colitis | 25 (5.9%) | 0 | 3 (0.6%) | 0 |
 | Hepatitis | 17 (4.0%) | 0 | 2 (0.4%) | 1 (0.2%) |
 
-*Subjects with at least one event. Simulated data; the KEYNOTE-189 control arm has none of these terms.*
+*Subjects with at least one event. Simulated data; the simu-KEYNOTE-189 control arm has none of these terms.*
 
 Subjects with a hypothyroidism event also had higher TSH during the study:
 
 | Study | Hypothyroidism AE | Subjects | Median of highest TSH (mIU/L) | Highest TSH > 10 |
 |---|---|---:|---:|---:|
-| KEYNOTE-189 | No | 552 | 3.64 | 0.0% |
-| KEYNOTE-189 | Yes | 64 | 7.28 | 4.7% |
-| KEYNOTE-564 | No | 887 | 2.17 | 0.0% |
-| KEYNOTE-564 | Yes | 107 | 13.96 | 77.6% |
+| simu-KEYNOTE-189 | No | 552 | 3.64 | 0.0% |
+| simu-KEYNOTE-189 | Yes | 64 | 7.28 | 4.7% |
+| simu-KEYNOTE-564 | No | 887 | 2.17 | 0.0% |
+| simu-KEYNOTE-564 | Yes | 107 | 13.96 | 77.6% |
 
 *AE joined to LB on study and subject. The TSH unit is one the agent inferred; see [the lab decision log](../decisions_lb.md#results-and-units).*
 
@@ -355,19 +355,19 @@ Read all three tables as a test of the plumbing. With simulated data, they show 
 
 The agent made a lot of decisions without asking me. What made that acceptable is that it wrote every one of them down. Each domain has a decision log: a plain markdown table with one row per decision, giving what was decided, the evidence from the data, and a status.
 
-- **Mechanical**: follows from the data or from CDISC conventions. KEYNOTE-189's `BLACK` becomes `BLACK OR AFRICAN AMERICAN`.
+- **Mechanical**: follows from the data or from CDISC conventions. simu-KEYNOTE-189's `BLACK` becomes `BLACK OR AFRICAN AMERICAN`.
 - **Choice**: a reasonable option among several, with the alternatives named. The age cut at 65.
-- **Assumption**: something the data cannot confirm. KEYNOTE-564's age unit is years.
+- **Assumption**: something the data cannot confirm. simu-KEYNOTE-564's age unit is years.
 
 The three logs hold 57 entries: 28 mechanical, 23 choices and 6 assumptions. A sample:
 
 | Domain | Decision | Evidence | Status |
 |---|---|---|---|
-| DM | KEYNOTE-189 has no subject ID item, so SUBJID is the trailing digits of the subject key. | In KEYNOTE-564 the collected SUBJID equals its key's trailing digits. | Assumption |
-| DM | KEYNOTE-189's `BLACK` becomes `BLACK OR AFRICAN AMERICAN`. | KEYNOTE-189 collects BLACK (18 subjects); KEYNOTE-564 uses the CDISC term (12). | Mechanical |
-| AE | AESEQ numbers events in collection order. | Reproduces KEYNOTE-189's collected AESEQ for all 6,869 events. | Choice |
+| DM | simu-KEYNOTE-189 has no subject ID item, so SUBJID is the trailing digits of the subject key. | In simu-KEYNOTE-564 the collected SUBJID equals its key's trailing digits. | Assumption |
+| DM | simu-KEYNOTE-189's `BLACK` becomes `BLACK OR AFRICAN AMERICAN`. | simu-KEYNOTE-189 collects BLACK (18 subjects); simu-KEYNOTE-564 uses the CDISC term (12). | Mechanical |
+| AE | AESEQ numbers events in collection order. | Reproduces simu-KEYNOTE-189's collected AESEQ for all 6,869 events. | Choice |
 | AE | Preferred terms are upper-cased for both studies. | 27 and 30 terms with no exact overlap; 16 shared after upper-casing, each with the same organ class. | Choice |
-| LB | Free T3 (KEYNOTE-189) and total T3 (KEYNOTE-564) stay separate tests. | Medians of 3.1 and 119: different analytes on different scales. | Mechanical |
+| LB | Free T3 (simu-KEYNOTE-189) and total T3 (simu-KEYNOTE-564) stay separate tests. | Medians of 3.1 and 119: different analytes on different scales. | Mechanical |
 | LB | Units are inferred from value ranges. | Neither ODM declares a unit; the ranges agree test by test between the studies. | Assumption |
 
 *From the [DM](../decisions.md), [AE](../decisions_ae.md) and [LB](../decisions_lb.md) decision logs.*
@@ -384,12 +384,12 @@ No single check would have convinced me. The run used the checks below; the limi
 | **No catch-all handlers** | Values nobody has reviewed | No unmapped or missing value in the current data |
 | **Converter cross-check** against yamaa's own converter | A broken XML parser | 11 fields identical, row for row, in both studies |
 | **A second implementation**: a Python simulation of each spec that builds the dataset another way, with pivots and joins instead of templates | Bugs in one implementation | 0 differing rows: DM 1,610, AE 9,137, LB 510,912 |
-| **Known answers** | Wrong ordering or date logic | Derived AESEQ matches 6,869 collected values; KEYNOTE-564's study days match its dates for every AE, and for every lab form that records a study day |
+| **Known answers** | Wrong ordering or date logic | Derived AESEQ matches 6,869 collected values; simu-KEYNOTE-564's study days match its dates for every AE, and for every lab form that records a study day |
 | **Cross-domain** | Subjects in AE or LB but missing from DM | None |
 | **Break-it tests**: six deliberately broken specs, such as a dictionary entry removed or a handler dropped | Checks that never fire | All six stopped with a clear message |
 | **Recount** | Stale numbers in the decision logs | Every count re-derived from the output |
 
-The consistency checks did more than confirm the output. Testing each study day against its date is how the agent found the screening-date problem in KEYNOTE-189.
+The consistency checks did more than confirm the output. Testing each study day against its date is how the agent found the screening-date problem in simu-KEYNOTE-189.
 
 There are also limits to what these checks prove:
 
