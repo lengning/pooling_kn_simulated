@@ -1,14 +1,25 @@
-# Two Trials, One Spec
+# Is Pooling Legacy Trials Still Painful?
 
-*Field notes on agents and clinical data | October 2026 | KEYNOTE-189 + KEYNOTE-564, simulated data*
+I'm looking into designing trials of an emerging molecule and wondered how one factor relates to another across indications. Legacy trials could answer it. But I remember how painful pooling legacy data can be. Each study names the same item differently, codes the same answer differently and collects things the others skipped. Most of those differences surface only after someone starts programming, which sends the work back to the specification, over and over. Would my question be worth that effort?
 
-I asked Claude Code to pool demographics (DM), adverse events (AE) and lab results (LB) from two simulated oncology trials. It read the raw exports, wrote specifications using the [yamaa framework](https://github.com/elong0527/yamaa), ran them, checked the output and returned a list of decisions that needed a person. The result was three draft datasets: 1,610 subjects, 9,137 adverse events and 510,912 lab results.
+Then I thought of [yamaa](https://github.com/elong0527/yamaa), a framework from our BBSW AI committee member Yilong Zhang for writing a clinical dataset's specification in YAML. Could it make pooling less painful? This post is my answer.
 
-Pooling starts with a question that crosses study boundaries. Do subjects who report hypothyroidism also show a change in their thyroid-stimulating hormone (TSH)? Answering that means joining demographics, events and labs across studies whose forms, item names and codes differ.
+The job was to pool demographics (DM), adverse events (AE) and lab results (LB) from two simulated oncology trials. simu-KEYNOTE-189 has 616 simulated subjects with metastatic lung cancer; simu-KEYNOTE-564 has 994 with kidney cancer after surgery. They made a useful test: their control arms differ, their lab tests use different names, and one study collects items the other does not. Even a familiar variable such as race needs a harmonization rule.
 
-The two studies made a useful test. KEYNOTE-189 has 616 simulated subjects with metastatic lung cancer; KEYNOTE-564 has 994 with kidney cancer after surgery. Their control arms differ, their lab tests use different names, and one study collects items the other does not. Even a familiar variable such as race needs a harmonization rule.
+I gave the job to Claude Code, a coding agent, working with yamaa. If you haven't used a coding agent, think of a chat assistant that can also work in your project folder: you give it a goal, and it reads files, writes code, runs it, reads the output or the error, and decides what to do next. It repeats that loop until the job is done or it needs you. yamaa works alongside that assistant as its rulebook and quality auditor: it defines how a dataset specification must be written, and it stops the run whenever the data or the spec breaks those rules.
 
-Usually, these differences emerge while someone programs the datasets, sending the work back to the specification. I wanted to see what happened when an agent ran that discovery loop. I set the scope and the order (DM, then AE, then LB) and reviewed the decisions it returned.
+In practice, they split the work like this:
+
+- **yamaa defines the spec.** A spec says what each column of a dataset means and how it is derived from the raw export.
+- **Claude Code does what a programmer would otherwise do by hand.** It reads yamaa's documentation and worked examples, profiles the raw data, writes the spec and runs it.
+- **When a check stops the run, the agent fixes the spec.** A race value missing from the dictionary, for example, stops the run; the agent reads the error, looks at the data and adds a rule. That loop (look at the data, write a rule, run it, hit a surprise, fix the rule) is the tedious part of pooling.
+- **Each fix is recorded.** It becomes an explicit rule in the spec, and the agent logs it as a decision with its evidence.
+
+Why not let the agent write the pooling code directly? It could. Claude Code can write R or Python that reads both exports and produces the datasets. But the harmonization rules would then be scattered through that code, and reviewing them would mean reading it line by line. Nothing would force a stop on an unexpected value, either: a script that meets a new race code can just as easily drop it, pass it through or lump it into "OTHER" without telling anyone. yamaa narrows the agent's choices. Its worked examples show the agent which conventions to follow, the YAML spec is short enough for a statistician to review rule by rule, and its strictness turns a surprise into a stopped run rather than a quiet error in the output. The agent brings speed; yamaa makes the result reviewable.
+
+I set the scope and the order (DM, then AE, then LB) and let the agent work. It returned three draft datasets (1,610 subjects, 9,137 adverse events and 510,912 lab results) and a ranked list of the decisions that needed a person.
+
+The short answer: noticeably less painful! But not painless. I wrote no derivation code. The effort moved from programming to review, and a few questions, such as missing lab units, still needed someone who knows the studies.
 
 > **Simulated data.** The [synthetic datasets](https://github.com/RConsortium/submissions-pilot7-synthetic-data) follow the KEYNOTE-189 and KEYNOTE-564 protocols and were provided by the R Consortium Submissions Working Group (Pilot 7) in collaboration with BBSW. They contain no real patient data. The results below illustrate the workflow and say nothing about pembrolizumab.
 
@@ -24,7 +35,7 @@ The pooling design has three parts:
 - **Shared derivations** apply the pooling rules once, across both studies. A dictionary can turn two collected terms into one output term.
 - **Strict checks** stop the run when a value or structure falls outside the specification. The agent has to resolve a surprise explicitly before the run can continue.
 
-The distinction between templates and shared derivations matters because the studies cannot share one item binding. KEYNOTE-189's race item is `IT.NCT02578680.DM.RACE`; KEYNOTE-564's is `IT.NCT03142334.DM.RACE`. Each template reads its own item into the same intermediate column:
+The distinction between templates and shared derivations matters because the studies cannot share one item binding. simu-KEYNOTE-189's race item is `IT.NCT02578680.DM.RACE`; simu-KEYNOTE-564's is `IT.NCT03142334.DM.RACE`. Each template reads its own item into the same intermediate column:
 
 ```yaml
 rows:
@@ -49,11 +60,11 @@ The agent followed a simple cycle: **profile -> specify -> run -> check**. Befor
 
 The three domains used the same design, with different rules for building rows:
 
-**DM: one row per subject.** Each study's template groups records by subject and reads its demographic items. Shared mappings harmonize race, sex and country. Every template must supply the same columns; KEYNOTE-564 has no age-unit item, so its template supplies the provisional literal `YEARS`.
+**DM: one row per subject.** Each study's template groups records by subject and reads its demographic items. Shared mappings harmonize race, sex and country. Every template must supply the same columns; simu-KEYNOTE-564 has no age-unit item, so its template supplies the provisional literal `YEARS`.
 
-**AE: one row per event.** Each occurrence of the repeating adverse-event form becomes a row. Shared rules harmonize preferred-term case, severity and action taken. A sequence number follows collection order within each subject. That choice had a useful check: it reproduced all 6,869 sequence numbers collected in KEYNOTE-189, while also supplying numbers for KEYNOTE-564, which collected none.
+**AE: one row per event.** Each occurrence of the repeating adverse-event form becomes a row. Shared rules harmonize preferred-term case, severity and action taken. A sequence number follows collection order within each subject. That choice had a useful check: it reproduced all 6,869 sequence numbers collected in simu-KEYNOTE-189, while also supplying numbers for simu-KEYNOTE-564, which collected none.
 
-**LB: one row per result.** Each lab-test item becomes a row and reads its date and, where present, its grade from its own form occurrence. This avoided a subtle error: KEYNOTE-189's screening coagulation samples were dated three days before the other screening labs. Taking one date per visit would have misdated those 616 results. Shared mappings harmonize test names while preserving distinctions such as free T3 versus total T3.
+**LB: one row per result.** Each lab-test item becomes a row and reads its date and, where present, its grade from its own form occurrence. This avoided a subtle error: simu-KEYNOTE-189's screening coagulation samples were dated three days before the other screening labs. Taking one date per visit would have misdated those 616 results. Shared mappings harmonize test names while preserving distinctions such as free T3 versus total T3.
 
 Once the three datasets were built, the agent joined AE and LB by study and subject to compare TSH results for subjects with and without a hypothyroidism event. The [analysis example](technical-appendix.md#cross-domain-analysis-examples) demonstrates that the datasets connect and support a cross-domain question. Its numbers come from simulated data, and the TSH unit was inferred.
 
@@ -69,7 +80,7 @@ The three logs contain 57 entries: 28 mechanical, 23 choices and 6 assumptions. 
 
 ### Race: a term that can be harmonized
 
-KEYNOTE-189 records `BLACK`; KEYNOTE-564 records `BLACK OR AFRICAN AMERICAN`. The agent mapped both to the CDISC term. KEYNOTE-189 also has `OTHER`, and KEYNOTE-564 has `MULTIPLE`, with no detail collected to resolve either. It kept those values as collected.
+simu-KEYNOTE-189 records `BLACK`; simu-KEYNOTE-564 records `BLACK OR AFRICAN AMERICAN`. The agent mapped both to the CDISC term. simu-KEYNOTE-189 also has `OTHER`, and simu-KEYNOTE-564 has `MULTIPLE`, with no detail collected to resolve either. It kept those values as collected.
 
 The study templates above supply `RACE_RAW`. The shared derivation contains the decision:
 
@@ -92,7 +103,7 @@ There is no catch-all mapping. A new race value in a later data cut will stop th
 
 ### Treatment: a grouping that needs an analysis plan
 
-Both studies have a pembrolizumab arm, but their controls are different. KEYNOTE-189's control is placebo plus pemetrexed and platinum; KEYNOTE-564's is placebo alone. The agent provisionally put both under one label so the pipeline could run:
+Both studies have a pembrolizumab arm, but their controls are different. simu-KEYNOTE-189's control is placebo plus pemetrexed and platinum; simu-KEYNOTE-564's is placebo alone. The agent provisionally put both under one label so the pipeline could run:
 
 ```yaml
 - name: TRTPOOL
@@ -109,7 +120,7 @@ The log marks this **Choice, needs SAP** (statistical analysis plan). The agent 
 
 The original study and arm columns are retained, so a reviewer can trace the grouping back to its sources. Changing the pooled labels means editing the mapping and rerunning the spec. The agent did not need to rewrite the source data to make its provisional choice executable.
 
-Smaller decisions followed the same pattern. `GLUCOSE` and `GLUC` became one serum glucose test code, while urine glucose remained distinguishable by category and specimen. The agent inferred mg/dL for serum glucose from the values because neither export declared a unit. It also supplied `YEARS` for KEYNOTE-564's missing age-unit item. Those are logged assumptions, with [the detailed examples in the appendix](technical-appendix.md#additional-mapping-examples).
+Smaller decisions followed the same pattern. `GLUCOSE` and `GLUC` became one serum glucose test code, while urine glucose remained distinguishable by category and specimen. The agent inferred mg/dL for serum glucose from the values because neither export declared a unit. It also supplied `YEARS` for simu-KEYNOTE-564's missing age-unit item. Those are logged assumptions, with [the detailed examples in the appendix](technical-appendix.md#additional-mapping-examples).
 
 The logs are what make these choices reviewable. A finished dataset does not reveal why two values were combined or why a missing item was filled. A log ties the output rule to evidence and tells the reviewer where the agent had to go beyond it.
 
@@ -122,12 +133,12 @@ The agent tested several different parts of the workflow. Some checks tested the
 | Specification checks: keys, required values, allowed values and numeric conversion | All passed for DM, AE and LB. |
 | R converter compared with yamaa's own converter | The 11 schema fields matched row for row in both studies. |
 | R output compared with separate Python simulations using pivots and joins | Zero differing rows across all three datasets. |
-| Known answers and cross-domain links | All 6,869 collected KEYNOTE-189 AE sequence numbers matched; every AE and LB subject was present in DM. |
+| Known answers and cross-domain links | All 6,869 collected simu-KEYNOTE-189 AE sequence numbers matched; every AE and LB subject was present in DM. |
 | Six deliberately broken specs | All six stopped with a clear message. |
 
 The break-it tests mattered because a passing run alone cannot show that a check will catch an error. The agent removed dictionary entries, introduced a value outside an allowed list and removed a numeric-conversion handler. The runs stopped, demonstrating that those constraints were active.
 
-Date checks also found a source-data problem. KEYNOTE-564's study days agreed with its dates. In KEYNOTE-189, screening dates and study days disagreed for several lab forms and 76 adverse events. The agent preserved the collected values and put the discrepancy on the review list.
+Date checks also found a source-data problem. simu-KEYNOTE-564's study days agreed with its dates. In simu-KEYNOTE-189, screening dates and study days disagreed for several lab forms and 76 adverse events. The agent preserved the collected values and put the discrepancy on the review list.
 
 **Agreement between the implementations is useful evidence, with limits.** The same agent wrote the R runner and Python simulations. They build the outputs differently, but a shared misunderstanding of a yamaa rule could survive both. The R runner implements a subset of the framework and reflects the agent's reading of those rules.
 
@@ -149,11 +160,11 @@ I set the scope and asked for a ranked review list at the end. In between, the a
 
 Two items deserve more than a table row.
 
-**Lab units affect the interpretation of every result.** Neither ODM export declares units. The agent inferred them from value ranges that agreed between studies and found five supported by KEYNOTE-564's item descriptions. The remaining assignments still need confirmation. Similar scales are evidence for an assumption; they do not make the unit a collected fact. The specimen assignments also come from the forms rather than collected specimen values.
+**Lab units affect the interpretation of every result.** Neither ODM export declares units. The agent inferred them from value ranges that agreed between studies and found five supported by simu-KEYNOTE-564's item descriptions. The remaining assignments still need confirmation. Similar scales are evidence for an assumption; they do not make the unit a collected fact. The specimen assignments also come from the forms rather than collected specimen values.
 
-**The screening-date discrepancy blocks the planned lab baseline derivation.** KEYNOTE-189's screening chemistry, hematology, thyroid and urinalysis forms carry the same dates as day 1. Where a study day is collected, it says -28. The screening coagulation dates are a separate finding, three days earlier. Until the providers resolve the conflict, a date-based rule cannot reliably distinguish screening from day 1 for the affected results.
+**The screening-date discrepancy blocks the planned lab baseline derivation.** simu-KEYNOTE-189's screening chemistry, hematology, thyroid and urinalysis forms carry the same dates as day 1. Where a study day is collected, it says -28. The screening coagulation dates are a separate finding, three days earlier. Until the providers resolve the conflict, a date-based rule cannot reliably distinguish screening from day 1 for the affected results.
 
-The review list also separates an analysis choice from the source value. KEYNOTE-189's `LIFE-THREATENING` severity became `SEVERE`, with the collected grade 4 retained in the toxicity-grade column. "Possibly related" remains in the collected causality column while a new grouping variable counts it as related. A reviewer can inspect the proposed grouping alongside the information it summarizes.
+The review list also separates an analysis choice from the source value. simu-KEYNOTE-189's `LIFE-THREATENING` severity became `SEVERE`, with the collected grade 4 retained in the toxicity-grade column. "Possibly related" remains in the collected causality column while a new grouping variable counts it as related. A reviewer can inspect the proposed grouping alongside the information it summarizes.
 
 Batch review worked well for choices that were easy to change and easier to judge together. The units question is the exception: I would rather the agent had raised it as soon as it discovered the missing metadata. Finishing the pipeline did not make that assumption less important.
 
