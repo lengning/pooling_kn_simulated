@@ -16,7 +16,7 @@ The [technical appendix](technical-appendix.md) contains the execution commands,
 
 ## How the pooling works
 
-yamaa expresses a clinical-data specification in YAML: what rows a dataset contains, what its columns mean and how their values are derived. These specs start from the Operational Data Model (ODM) XML exported by an electronic data capture system. A converter makes a long table with one record per collected item, carrying its study, subject, visit and form identifiers.
+yamaa expresses a clinical-data specification in YAML: what rows a dataset contains, what its columns mean and how their values are derived. These specs start from the Operational Data Model (ODM) XML exported by an electronic data capture (EDC) system. A converter makes a long table with one record per collected item, carrying its study, subject, visit and form identifiers.
 
 The pooling design has three parts:
 
@@ -54,8 +54,6 @@ The three domains used the same design, with different rules for building rows:
 **AE: one row per event.** Each occurrence of the repeating adverse-event form becomes a row. Shared rules harmonize preferred-term case, severity and action taken. A sequence number follows collection order within each subject. That choice had a useful check: it reproduced all 6,869 sequence numbers collected in KEYNOTE-189, while also supplying numbers for KEYNOTE-564, which collected none.
 
 **LB: one row per result.** Each lab-test item becomes a row and reads its date and, where present, its grade from its own form occurrence. This avoided a subtle error: KEYNOTE-189's screening coagulation samples were dated three days before the other screening labs. Taking one date per visit would have misdated those 616 results. Shared mappings harmonize test names while preserving distinctions such as free T3 versus total T3.
-
-Execution needed a workaround. In the original Windows environment, the official Python engine could not run, so the agent wrote a small R runner supporting only the constructs these specs use. It stops on an unsupported construct. **The official yamaa engine has not yet run these specs**; the validation below describes what was checked instead.
 
 Once the three datasets were built, the agent joined AE and LB by study and subject to compare TSH results for subjects with and without a hypothyroidism event. The [analysis example](technical-appendix.md#cross-domain-analysis-examples) demonstrates that the datasets connect and support a cross-domain question. Its numbers come from simulated data, and the TSH unit was inferred.
 
