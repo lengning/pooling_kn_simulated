@@ -1,6 +1,6 @@
 # Two Trials, One Spec
 
-*Field notes on agents and clinical data · October 2026 · KEYNOTE-189 + KEYNOTE-564, simulated data*
+*Field notes on agents and clinical data | October 2026 | KEYNOTE-189 + KEYNOTE-564, simulated data*
 
 I asked Claude Code to pool demographics (DM), adverse events (AE) and lab results (LB) from two simulated oncology trials. It read the raw exports, wrote specifications using the [yamaa framework](https://github.com/elong0527/yamaa), ran them, checked the output and returned a list of decisions that needed a person. The result was three draft datasets: 1,610 subjects, 9,137 adverse events and 510,912 lab results.
 
@@ -8,7 +8,7 @@ Pooling starts with a question that crosses study boundaries. Do subjects who re
 
 The two studies made a useful test. KEYNOTE-189 has 616 simulated subjects with metastatic lung cancer; KEYNOTE-564 has 994 with kidney cancer after surgery. Their control arms differ, their lab tests use different names, and one study collects items the other does not. Even a familiar variable such as race needs a harmonization rule.
 
-Usually, these differences emerge while someone programs the datasets, sending the work back to the specification. I wanted to see what happened when an agent ran that discovery loop. I set the scope and the order—DM, then AE, then LB—and reviewed the decisions it returned.
+Usually, these differences emerge while someone programs the datasets, sending the work back to the specification. I wanted to see what happened when an agent ran that discovery loop. I set the scope and the order (DM, then AE, then LB) and reviewed the decisions it returned.
 
 > **Simulated data.** The [synthetic datasets](https://github.com/RConsortium/submissions-pilot7-synthetic-data) follow the KEYNOTE-189 and KEYNOTE-564 protocols and were provided by the R Consortium Submissions Working Group (Pilot 7) in collaboration with BBSW. They contain no real patient data. The results below illustrate the workflow and say nothing about pembrolizumab.
 
@@ -45,7 +45,7 @@ rows:
 
 The templates' rows are stacked, then the shared race mapping runs over all of them. A reviewer can inspect the study bindings separately from the pooling rule. Adding another study would mean adding its bindings and reviewing any new values against the shared dictionaries.
 
-The agent followed a simple cycle: **profile → specify → run → check**. Before writing YAML, it read the relevant yamaa rules and worked examples, then queried both studies. Which forms existed? Which items repeated? What values were actually stored? The last question mattered: the declared race codelists did not match the collected values, so the mapping had to follow the data.
+The agent followed a simple cycle: **profile -> specify -> run -> check**. Before writing YAML, it read the relevant yamaa rules and worked examples, then queried both studies. Which forms existed? Which items repeated? What values were actually stored? The last question mattered: the declared race codelists did not match the collected values, so the mapping had to follow the data.
 
 The three domains used the same design, with different rules for building rows:
 
@@ -107,7 +107,7 @@ Both studies have a pembrolizumab arm, but their controls are different. KEYNOTE
         PBO: Control       # KEYNOTE-564: placebo alone
 ```
 
-The log marks this **Choice, needs SAP**—the statistical analysis plan. The agent put it first in its ranked review list. A statistician still needs to decide whether that grouping suits the intended analysis or whether the controls should remain separate. The shared word "Control" does not establish that the comparators are interchangeable.
+The log marks this **Choice, needs SAP** (statistical analysis plan). The agent put it first in its ranked review list. A statistician still needs to decide whether that grouping suits the intended analysis or whether the controls should remain separate. The shared word "Control" does not establish that the comparators are interchangeable.
 
 The original study and arm columns are retained, so a reviewer can trace the grouping back to its sources. Changing the pooled labels means editing the mapping and rerunning the spec. The agent did not need to rewrite the source data to make its provisional choice executable.
 
@@ -153,13 +153,13 @@ Two items deserve more than a table row.
 
 **Lab units affect the interpretation of every result.** Neither ODM export declares units. The agent inferred them from value ranges that agreed between studies and found five supported by KEYNOTE-564's item descriptions. The remaining assignments still need confirmation. Similar scales are evidence for an assumption; they do not make the unit a collected fact. The specimen assignments also come from the forms rather than collected specimen values.
 
-**The screening-date discrepancy blocks the planned lab baseline derivation.** KEYNOTE-189's screening chemistry, hematology, thyroid and urinalysis forms carry the same dates as day 1. Where a study day is collected, it says −28. The screening coagulation dates are a separate finding, three days earlier. Until the providers resolve the conflict, a date-based rule cannot reliably distinguish screening from day 1 for the affected results.
+**The screening-date discrepancy blocks the planned lab baseline derivation.** KEYNOTE-189's screening chemistry, hematology, thyroid and urinalysis forms carry the same dates as day 1. Where a study day is collected, it says -28. The screening coagulation dates are a separate finding, three days earlier. Until the providers resolve the conflict, a date-based rule cannot reliably distinguish screening from day 1 for the affected results.
 
 The review list also separates an analysis choice from the source value. KEYNOTE-189's `LIFE-THREATENING` severity became `SEVERE`, with the collected grade 4 retained in the toxicity-grade column. "Possibly related" remains in the collected causality column while a new grouping variable counts it as related. A reviewer can inspect the proposed grouping alongside the information it summarizes.
 
 Batch review worked well for choices that were easy to change and easier to judge together. The units question is the exception: I would rather the agent had raised it as soon as it discovered the missing metadata. Finishing the pipeline did not make that assumption less important.
 
-The full evidence remains in the [DM](../decisions.md), [AE](../decisions_ae.md) and [LB](../decisions_lb.md) decision logs. Each entry gives a reviewer something to check—a count, a collected value or a rule—and a place to change the specification. The source exports remain intact.
+The full evidence remains in the [DM](../decisions.md), [AE](../decisions_ae.md) and [LB](../decisions_lb.md) decision logs. Each entry gives a reviewer something to check (a count, a collected value or a rule) and a place to change the specification. The source exports remain intact.
 
 ## What changes for the programmer
 

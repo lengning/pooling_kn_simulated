@@ -259,7 +259,7 @@ KEYNOTE-189 also records toxicity grades for three hematology tests. Each of tho
 
 *From `lb_pooled_r.csv`, subject KEYNOTE189_SIM-SITE001-0028; STUDYID, DOMAIN, USUBJID, LBTEST, LBSPEC, LBSTRESC and LBSTRESU omitted.*
 
-Each row shows a decision from the lab specification. The coagulation result carries its own form's date, three days before the others, and has no study day because its form has none. The neutrophil count carries KEYNOTE-189's collected grade. The urine protein result has no unit and no numeric value. The ALT and neutrophil rows also show the screening-date problem recorded in [the lab decision log](../decisions_lb.md#data-findings-behind-these-decisions): they are dated 1 April, the same day as this subject's C1D1 visit, with a study day of −28. Urinalysis has the same date discrepancy but no collected study day.
+Each row shows a decision from the lab specification. The coagulation result carries its own form's date, three days before the others, and has no study day because its form has none. The neutrophil count carries KEYNOTE-189's collected grade. The urine protein result has no unit and no numeric value. The ALT and neutrophil rows also show the screening-date problem recorded in [the lab decision log](../decisions_lb.md#data-findings-behind-these-decisions): they are dated 1 April, the same day as this subject's C1D1 visit, with a study day of -28. Urinalysis has the same date discrepancy but no collected study day.
 
 ## Additional mapping examples
 
