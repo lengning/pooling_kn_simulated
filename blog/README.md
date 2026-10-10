@@ -2,9 +2,9 @@
 
 *Field notes on agents and clinical data · October 2026 · DM, AE, LB · KEYNOTE-189 + KEYNOTE-564, simulated data*
 
-I asked an AI agent to pool demographics, adverse events and lab results from two simulated oncology trials. It wrote the specifications in a language called yamaa, ran them, checked its own output, and handed back a short list of decisions that needed a person. Here is how that went, step by step.
+I asked an AI agent to pool demographics, adverse events and lab results from two simulated oncology trials. It wrote the specifications using YAML following yamaa framework (https://github.com/elong0527/yamaa), ran them, checked its own output, and handed back a short list of decisions that needed a person. Here is how that went, step by step.
 
-> **Simulated data.** Everything in this post uses simulated data. The two studies are synthetic datasets modelled on the KEYNOTE-189 and KEYNOTE-564 protocols and published by the R Consortium Submissions Working Group (Pilot 7). They contain no real patient data, and none of the results here say anything about pembrolizumab.
+> **Simulated data.** Everything in this post uses simulated data. The two studies are [synthetic datasets](https://github.com/RConsortium/submissions-pilot7-synthetic-data) following the KEYNOTE-189 and KEYNOTE-564 protocols and provided by the R Consortium Submissions Working Group (Pilot 7) in collaboration with BBSW. They contain no real patient data. None of the results here is relevant to pembrolizumab.
 
 ## Why pool, and why it hurts
 
@@ -12,7 +12,7 @@ A single trial answers the question it was designed for. Pooled data answers the
 
 The trouble is that no two studies collect data the same way. Item names differ. Code lists differ. One study records a toxicity grade and the other doesn't. So pooling has always been a loop, and a slow one. Most of the time in that loop goes into discovering the data: finding out that one study writes `GLUCOSE` and the other `GLUC`, that one codes preferred terms in upper case, that a date sits on a different form than you expected. Each discovery sends you back to the spec.
 
-I wanted to see what happens when an agent runs that loop. I gave Claude Code, Anthropic's coding agent, the raw EDC exports of two studies and a specification language called yamaa, and asked it to pool DM, then AE, then LB.
+I wanted to see what happens when an agent runs that loop. I gave Claude Code the raw EDC exports of two studies and a specification framework called yamaa, and asked it to pool DM, then AE, then LB.
 
 **The usual way**
 
@@ -49,7 +49,7 @@ Before the details of yamaa, here is what an agent decision looks like in practi
 
 ### Decided by the agent: race, one study's term becomes the CDISC term
 
-**Found.** KEYNOTE-189 records race as `BLACK` (18 subjects); KEYNOTE-564 records `BLACK OR AFRICAN AMERICAN` (12). KEYNOTE-189 also has `OTHER` (14) and KEYNOTE-564 has `MULTIPLE` (13), with no detail collected for either. Neither study's declared codelist matches its stored values, so the dictionary follows the data.
+**Found.** KEYNOTE-189 records race as `BLACK`; KEYNOTE-564 records `BLACK OR AFRICAN AMERICAN`. KEYNOTE-189 also has `OTHER` and KEYNOTE-564 has `MULTIPLE`, with no detail collected for either. Neither study's declared codelist matches its stored values, so the dictionary follows the data.
 
 **Decided.** Map `BLACK` to the CDISC term. Keep `OTHER` and `MULTIPLE` as they are, because there is nothing to resolve them with.
 
@@ -137,7 +137,7 @@ AGEU: {literal: YEARS}
 
 ## yamaa in five minutes
 
-yamaa is a domain-specific language for clinical data standardization. You write a specification in YAML that says what each column of a dataset is and how it is derived; an engine reads the raw data and builds the dataset. The input is the ODM XML that an EDC system exports, and the outputs are CDISC SDTM and ADaM datasets. It is open source under the MIT license, at [github.com/elong0527/yamaa](https://github.com/elong0527/yamaa).
+yamaa is a domain-specific language for clinical data standardization. You write a specification in YAML that says what each column of a dataset is and how it is derived; an engine reads the raw data and builds the dataset. The input is the ODM XML that an EDC system exports, and the outputs are CDISC SDTM and ADaM datasets.
 
 Four ideas cover most of it.
 
@@ -498,29 +498,10 @@ There are also limits to what these checks prove:
 
 The work moved. I wrote no derivation code. My time went into setting the scope, reading decision logs and deciding the bolded items, which is the part of pooling that needs a person anyway. The agent did the data discovery that used to fill most of the loop.
 
-If you try this, these are the things that made the difference for me:
+If you try this, these are the things that made the difference:
 
 - Ask for a decision log with a status on every entry. Without one, a spec is just output.
 - Keep the spec strict. Leave out catch-all handlers and let unexpected values stop the run.
 - Ask for a second implementation, and compare the two row for row.
 - Ask the agent to break its own spec and show that every check fails loudly.
 - Ask for a ranked review list at the end, and read it before anything else.
-
-## By the numbers
-
-| | |
-|---|---:|
-| ODM item records read | 1,795,111 |
-| Subjects (DM rows) | 1,610 |
-| Adverse events (AE rows) | 9,137 |
-| Lab results (LB rows) | 510,912 |
-| Row templates in DM, AE, LB | 2, 2, 13 |
-| Decision-log entries: mechanical, choice, assumption | 28, 23, 6 |
-| Broken specs that stopped | 6 of 6 |
-| Rows that differ from the second implementation | 0 |
-
----
-
-Data: simulated KEYNOTE-189 and KEYNOTE-564 datasets from the R Consortium Submissions Working Group, Pilot 7. No real patient data were used. Specification language: [yamaa](https://github.com/elong0527/yamaa). Agent: Claude Code.
-
-The project folder holds the three specs (`dm_pooled.yaml`, `ae_pooled.yaml`, `lb_pooled.yaml`), their decision logs, the R runner `yamaa_mini.R`, the analysis code `example_questions.R`, and the reference simulations under `reference/`.
